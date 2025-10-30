@@ -227,7 +227,7 @@ def calcular_total_dia(fecha: Optional[str] = None) -> float:
     return total
 def eliminar_recibo_dia(recibo_id: int, motivo: str = "") -> float:
     """Elimina un recibo del día y devuelve el monto que debe restarse del total"""
-    from modules.models import obtener_recibo_por_id, eliminar_recibo as eliminar_recibo_db
+    from modules.models import obtener_recibo_por_id, eliminar_recibo_db
     recibo = obtener_recibo_por_id(recibo_id)
     if not recibo:
         raise ValueError("Recibo no encontrado")
@@ -312,62 +312,48 @@ def cambiar_cultivo_siembra(campesino_id: int, nuevo_cultivo: str, justificacion
     )
     return nueva_siembra_id
 # ==================== GESTIÓN MANUAL DE DATOS ====================
+# Las funciones para crear/actualizar siembras y recibos manualmente
+# se pueden colocar aquí si no encajan en models.py o ui_components.py
+# Por ejemplo, si necesitas lógica específica de negocio al crear uno manualmente:
 def crear_siembra_manual(campesino_id: int, cultivo: str, ciclo: str, fecha_inicio: str) -> int:
-    """Crea una siembra manualmente"""
-    campesino = obtener_campesino_por_id(campesino_id)
-    if not campesino:
-        raise ValueError("Campesino no encontrado")
-    siembra_id = crear_siembra(campesino_id, cultivo, ciclo)
-    # Actualizar la fecha de inicio si se proporciona
-    if fecha_inicio:
-        from modules.models import get_connection
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('UPDATE siembras SET fecha_inicio = ? WHERE id = ?', (fecha_inicio, siembra_id))
-        conn.commit()
-        conn.close()
-    registrar_auditoria(
-        'CREAR_SIEMBRA_MANUAL',
-        f"Siembra creada manualmente: {campesino['nombre']} - {cultivo} - Ciclo: {ciclo}",
-        None
-    )
-    return siembra_id
+    """Crea una siembra manualmente."""
+    # Aquí podrías añadir lógica específica si es necesario
+    # Por ahora, simplemente llama a la función de models
+    return crear_siembra(campesino_id, cultivo, ciclo, fecha_inicio)
 
 def crear_riego_manual(campesino_id: int, siembra_id: int, folio: int, fecha: str, hora: str, tipo_accion: str, costo: float) -> int:
-    """Crea un riego manualmente"""
-    campesino = obtener_campesino_por_id(campesino_id)
+    """Crea un riego manualmente."""
+    # Lógica para crear un recibo asociado a una siembra específica
+    # y actualizar el contador de riegos en la siembra
+    from modules.models import get_connection, incrementar_riegos, obtener_siembra_por_id
+    conn = get_connection()
+    cursor = conn.cursor()
+    # Obtener cultivo y ciclo de la siembra
     siembra = obtener_siembra_por_id(siembra_id)
-    if not campesino or not siembra or campesino['id'] != siembra['campesino_id']:
-        raise ValueError("Campesino o Siembra no válidos, o no coinciden.")
-
-    recibo_datos = {
+    if not siembra or siembra['campesino_id'] != campesino_id:
+        conn.close()
+        raise ValueError("Siembra no encontrada o no pertenece al campesino.")
+    # Calcular número de riego
+    cursor.execute("SELECT COUNT(*) FROM recibos WHERE siembra_id = ?", (siembra_id,))
+    numero_riego = cursor.fetchone()[0] + 1
+    # Datos para crear recibo
+    datos_recibo = {
         'folio': folio,
         'fecha': fecha,
         'hora': hora,
         'campesino_id': campesino_id,
         'siembra_id': siembra_id,
         'cultivo': siembra['cultivo'],
-        'numero_riego': siembra['numero_riegos'] + 1, # Asignar siguiente número de riego
+        'numero_riego': numero_riego,
         'tipo_accion': tipo_accion,
         'costo': costo,
         'ciclo': siembra['ciclo']
     }
-    recibo_id = crear_recibo(recibo_datos)
-    incrementar_riegos(siembra_id) # Incrementar riegos en la siembra
-    # Actualizar folio actual si el folio manual es mayor
-    folio_actual = obtener_folio_actual()
-    if folio > folio_actual:
-        actualizar_configuracion('folio_actual', str(folio + 1))
-    registrar_auditoria(
-        'CREAR_RIEGO_MANUAL',
-        f"Riego creado manualmente: Folio {folio} - {campesino['nombre']} - Riego #{recibo_datos['numero_riego']} - {siembra['cultivo']}",
-        None
-    )
+    recibo_id = crear_recibo(datos_recibo)
+    # Incrementar riegos en la siembra
+    incrementar_riegos(siembra_id)
+    conn.close()
     return recibo_id
-
-def actualizar_folio_manual(nuevo_folio: int) -> bool:
-    """Actualiza el folio actual manualmente (delega a la función específica)"""
-    return actualizar_folio_actual(nuevo_folio)
 
 # ==================== BÚSQUEDA Y FILTROS ====================
 def buscar_recibos_avanzado(filtros: Dict) -> list:

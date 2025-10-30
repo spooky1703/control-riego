@@ -312,8 +312,7 @@ def actualizar_siembra(siembra_id: int, nuevos_datos: Dict) -> bool:
     finally:
         conn.close()
 def eliminar_siembra(siembra_id: int) -> bool:
-    """Elimina una siembra (lógicamente o físicamente, dependiendo del uso)"""
-    # Opción 1: Eliminación lógica, marcando como inactiva y cerrando fecha_fin
+    """Elimina una siembra (lógicamente, marcando como inactiva)"""
     conn = get_connection()
     cursor = conn.cursor()
     datos_previos = obtener_siembra_por_id(siembra_id)
@@ -330,9 +329,6 @@ def eliminar_siembra(siembra_id: int) -> bool:
     conn.commit()
     conn.close()
     return True
-    # Opción 2: Eliminación física (borrar el registro) - No recomendada si hay recibos asociados
-    # cursor.execute('DELETE FROM siembras WHERE id = ?', (siembra_id,))
-    # conn.commit()
 def obtener_siembra_por_id(siembra_id: int) -> Optional[Dict]:
     """Obtiene una siembra por su ID"""
     conn = get_connection()
