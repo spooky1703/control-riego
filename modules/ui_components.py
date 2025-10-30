@@ -10,12 +10,15 @@ from modules.models import (
     actualizar_campesino, eliminar_campesino, obtener_todos_campesinos,
     obtener_siembra_activa, obtener_historial_siembras,
     obtener_recibos_dia, obtener_configuracion, actualizar_configuracion,
-    obtener_toda_configuracion, obtener_auditoria, obtener_recibos_campesino
+    obtener_toda_configuracion, obtener_auditoria, obtener_recibos_campesino,
+    obtener_todas_las_siembras, obtener_siembra_por_id, obtener_todos_los_recibos
 )
 from modules.logic import (
     calcular_costo, validar_campesino, nueva_siembra, vender_riego,
     calcular_total_dia, eliminar_recibo_dia, cerrar_dia,
-    reiniciar_folios_y_ciclo, crear_backup, cambiar_cultivo_siembra
+    reiniciar_folios_y_ciclo, crear_backup, cambiar_cultivo_siembra,
+    validar_siembra, validar_recibo, crear_siembra_manual, crear_riego_manual,
+    actualizar_folio_manual
 )
 from modules.reports import (
     generar_recibo_pdf, generar_reporte_diario, imprimir_recibo,
@@ -194,6 +197,9 @@ class VentanaPrincipal:
                   command=self.abrir_configuracion).pack(side=tk.LEFT, padx=5)
         ttk.Button(frame_botones_inf, text="💾 Backup",
                   command=self.crear_backup_manual).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones_inf, text="🔧 Administrar Datos",
+                  command=self.abrir_administrar_datos).pack(side=tk.LEFT, padx=5) # Nuevo botón
+
         # Cargar todos los campesinos
         self.cargar_todos_campesinos()
 
@@ -281,6 +287,10 @@ class VentanaPrincipal:
     def abrir_configuracion(self):
         """Abre el diálogo de configuración"""
         DialogoConfiguracion(self.root)
+
+    def abrir_administrar_datos(self):
+        """Abre el diálogo de administración de datos"""
+        VentanaAdministrarDatos(self.root, self)
 
     def actualizar_total_dia(self):
         """Actualiza el total del día"""
@@ -1032,6 +1042,69 @@ class DialogoConfiguracion:
                   width=15).pack(side=tk.LEFT, padx=5)
 
     def cargar_configuracion(self):
+        """Crea los widgets dentro del frame desplazable"""
+        notebook = ttk.Notebook(self.scrollable_frame)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        # ========== TAB 1: General ==========
+        tab_general = ttk.Frame(notebook, padding="15")
+        notebook.add(tab_general, text="General")
+        # Nombre oficina
+        ttk.Label(tab_general, text="Nombre de la Oficina:", font=('Helvetica', 10, 'bold')).grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.entry_nombre_oficina = ttk.Entry(tab_general, width=50)
+        self.entry_nombre_oficina.grid(row=1, column=0, pady=5)
+        # Ubicación
+        ttk.Label(tab_general, text="Ubicación:", font=('Helvetica', 10, 'bold')).grid(row=2, column=0, sticky=tk.W, pady=5)
+        self.entry_ubicacion = ttk.Entry(tab_general, width=50)
+        self.entry_ubicacion.grid(row=3, column=0, pady=5)
+        # Tarifa
+        ttk.Label(tab_general, text="Tarifa por Hectárea:", font=('Helvetica', 10, 'bold')).grid(row=4, column=0, sticky=tk.W, pady=5)
+        self.entry_tarifa = ttk.Entry(tab_general, width=50)
+        self.entry_tarifa.grid(row=5, column=0, pady=5)
+        # Ciclo actual (solo lectura)
+        ttk.Label(tab_general, text="Ciclo Actual:", font=('Helvetica', 10, 'bold')).grid(row=6, column=0, sticky=tk.W, pady=5)
+        self.label_ciclo = ttk.Label(tab_general, text="-", foreground='blue')
+        self.label_ciclo.grid(row=7, column=0, sticky=tk.W, pady=5)
+        # Folio actual (solo lectura)
+        ttk.Label(tab_general, text="Folio Actual:", font=('Helvetica', 10, 'bold')).grid(row=8, column=0, sticky=tk.W, pady=5)
+        self.label_folio = ttk.Label(tab_general, text="-", foreground='blue')
+        self.label_folio.grid(row=9, column=0, sticky=tk.W, pady=5)
+        # ========== TAB 2: Auditoría ==========
+        tab_auditoria = ttk.Frame(notebook, padding="15")
+        notebook.add(tab_auditoria, text="Auditoría")
+        # Treeview de auditoría
+        columnas = ('fecha_hora', 'tipo', 'descripcion')
+        self.tree_auditoria = ttk.Treeview(tab_auditoria, columns=columnas, show='headings', height=15)
+        self.tree_auditoria.heading('fecha_hora', text='Fecha/Hora')
+        self.tree_auditoria.heading('tipo', text='Tipo')
+        self.tree_auditoria.heading('descripcion', text='Descripción')
+        self.tree_auditoria.column('fecha_hora', width=150)
+        self.tree_auditoria.column('tipo', width=150)
+        self.tree_auditoria.column('descripcion', width=250)
+        scrollbar = ttk.Scrollbar(tab_auditoria, orient=tk.VERTICAL, command=self.tree_auditoria.yview)
+        self.tree_auditoria.configure(yscroll=scrollbar.set)
+        self.tree_auditoria.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        # Cargar auditoría
+        registros = obtener_auditoria(50)
+        for r in registros:
+            self.tree_auditoria.insert('', tk.END, values=(
+                r['fecha_hora'],
+                r['tipo_evento'],
+                r['descripcion']
+            ))
+        # Frame de botones
+        frame_botones = ttk.Frame(self.scrollable_frame)
+        frame_botones.pack(fill=tk.X, padx=10, pady=10)
+        ttk.Button(frame_botones,
+                  text="💾 Guardar Cambios",
+                  command=self.guardar_configuracion,
+                  width=20).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones,
+                  text="❌ Cerrar",
+                  command=self.ventana.destroy,
+                  width=15).pack(side=tk.LEFT, padx=5)
+
+    def cargar_configuracion(self):
         """Carga la configuración actual"""
         config = obtener_toda_configuracion()
         self.entry_nombre_oficina.insert(0, config.get('nombre_oficina', ''))
@@ -1057,3 +1130,578 @@ class DialogoConfiguracion:
             messagebox.showinfo("Éxito", "Configuración guardada exitosamente")
         except Exception as e:
             messagebox.showerror("Error", f"Error al guardar configuración:\n{str(e)}")
+
+# ==================== VENTANA ADMINISTRAR DATOS ====================
+class VentanaAdministrarDatos:
+    """Ventana para administrar datos manualmente"""
+    def __init__(self, parent, ventana_principal):
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title("🔧 Administrar Datos")
+        self.ventana.geometry("1200x700")
+        self.ventana.transient(parent)
+        self.ventana.grab_set()
+        self.ventana_principal = ventana_principal
+
+        # Crear frame principal para scrolling
+        self.main_frame = ttk.Frame(self.ventana)
+        self.main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Configurar scrolling para el frame principal
+        self.scrollable_frame = configurar_scrolling(self.main_frame, self.ventana)
+
+        self.crear_widgets()
+
+    def crear_widgets(self):
+        """Crea los widgets de la ventana"""
+        notebook = ttk.Notebook(self.scrollable_frame)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # ========== TAB 1: Campesinos ==========
+        self.tab_campesinos = ttk.Frame(notebook, padding="10")
+        notebook.add(self.tab_campesinos, text="Campesinos")
+        self.crear_widgets_campesinos()
+
+        # ========== TAB 2: Siembras ==========
+        self.tab_siembras = ttk.Frame(notebook, padding="10")
+        notebook.add(self.tab_siembras, text="Siembras")
+        self.crear_widgets_siembras()
+
+        # ========== TAB 3: Riegos ==========
+        self.tab_riegos = ttk.Frame(notebook, padding="10")
+        notebook.add(self.tab_riegos, text="Riegos")
+        self.crear_widgets_riegos()
+
+        # ========== TAB 4: Folio ==========
+        self.tab_folio = ttk.Frame(notebook, padding="10")
+        notebook.add(self.tab_folio, text="Folio Actual")
+        self.crear_widgets_folio()
+
+    def crear_widgets_campesinos(self):
+        """Crea widgets para la pestaña de campesinos"""
+        # Frame de búsqueda
+        frame_busqueda = ttk.LabelFrame(self.tab_campesinos, text="Buscar Campesino", padding="5")
+        frame_busqueda.pack(fill=tk.X, pady=5)
+        self.entry_busqueda_camp = ttk.Entry(frame_busqueda, width=30)
+        self.entry_busqueda_camp.pack(side=tk.LEFT, padx=5)
+        self.entry_busqueda_camp.bind('<KeyRelease>', self.on_buscar_campesino)
+        ttk.Button(frame_busqueda, text="Buscar", command=self.on_buscar_campesino).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_busqueda, text="Limpiar", command=self.limpiar_busqueda_campesino).pack(side=tk.LEFT, padx=5)
+
+        # Frame de resultados
+        frame_resultados = ttk.Frame(self.tab_campesinos, padding="5")
+        frame_resultados.pack(fill=tk.BOTH, expand=True, pady=5)
+        columnas = ('id', 'lote', 'nombre', 'localidad', 'barrio', 'superficie')
+        self.tree_campesinos = ttk.Treeview(frame_resultados, columns=columnas, show='headings', height=10)
+        for col in columnas:
+            self.tree_campesinos.heading(col, text=col.title())
+            self.tree_campesinos.column(col, width=100)
+        scrollbar = ttk.Scrollbar(frame_resultados, orient=tk.VERTICAL, command=self.tree_campesinos.yview)
+        self.tree_campesinos.configure(yscroll=scrollbar.set)
+        self.tree_campesinos.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Frame de botones
+        frame_botones = ttk.Frame(self.tab_campesinos, padding="5")
+        frame_botones.pack(fill=tk.X, pady=5)
+        ttk.Button(frame_botones, text="Editar", command=self.editar_campesino).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="Eliminar", command=self.eliminar_campesino).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="Actualizar Lista", command=self.cargar_campesinos).pack(side=tk.LEFT, padx=5)
+
+        self.cargar_campesinos()
+
+    def crear_widgets_siembras(self):
+        """Crea widgets para la pestaña de siembras"""
+        # Frame de resultados
+        frame_resultados = ttk.Frame(self.tab_siembras, padding="5")
+        frame_resultados.pack(fill=tk.BOTH, expand=True, pady=5)
+        columnas = ('id', 'campesino_id', 'nombre_campesino', 'cultivo', 'fecha_inicio', 'fecha_fin', 'ciclo', 'activa')
+        self.tree_siembras = ttk.Treeview(frame_resultados, columns=columnas, show='headings', height=10)
+        for col in columnas:
+            self.tree_siembras.heading(col, text=col.replace('_', ' ').title())
+            self.tree_siembras.column(col, width=100)
+        scrollbar = ttk.Scrollbar(frame_resultados, orient=tk.VERTICAL, command=self.tree_siembras.yview)
+        self.tree_siembras.configure(yscroll=scrollbar.set)
+        self.tree_siembras.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Frame de botones
+        frame_botones = ttk.Frame(self.tab_siembras, padding="5")
+        frame_botones.pack(fill=tk.X, pady=5)
+        ttk.Button(frame_botones, text="Editar", command=self.editar_siembra).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="Eliminar", command=self.eliminar_siembra).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="Actualizar Lista", command=self.cargar_siembras).pack(side=tk.LEFT, padx=5)
+
+        self.cargar_siembras()
+
+    def crear_widgets_riegos(self):
+        """Crea widgets para la pestaña de riegos"""
+        # Frame de resultados
+        frame_resultados = ttk.Frame(self.tab_riegos, padding="5")
+        frame_resultados.pack(fill=tk.BOTH, expand=True, pady=5)
+        columnas = ('id', 'folio', 'fecha', 'hora', 'nombre_campesino', 'cultivo', 'numero_riego', 'costo', 'eliminado')
+        self.tree_riegos = ttk.Treeview(frame_resultados, columns=columnas, show='headings', height=10)
+        for col in columnas:
+            self.tree_riegos.heading(col, text=col.replace('_', ' ').title())
+            self.tree_riegos.column(col, width=100)
+        scrollbar = ttk.Scrollbar(frame_resultados, orient=tk.VERTICAL, command=self.tree_riegos.yview)
+        self.tree_riegos.configure(yscroll=scrollbar.set)
+        self.tree_riegos.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Frame de botones
+        frame_botones = ttk.Frame(self.tab_riegos, padding="5")
+        frame_botones.pack(fill=tk.X, pady=5)
+        ttk.Button(frame_botones, text="Editar", command=self.editar_riego).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="Eliminar", command=self.eliminar_riego).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="Actualizar Lista", command=self.cargar_riegos).pack(side=tk.LEFT, padx=5)
+
+        self.cargar_riegos()
+
+    def crear_widgets_folio(self):
+        """Crea widgets para la pestaña de folio"""
+        frame_folio = ttk.LabelFrame(self.tab_folio, text="Actualizar Folio Actual", padding="10")
+        frame_folio.pack(pady=20)
+
+        ttk.Label(frame_folio, text="Nuevo Folio:").pack(side=tk.LEFT, padx=5)
+        self.entry_nuevo_folio = ttk.Entry(frame_folio, width=10)
+        self.entry_nuevo_folio.pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_folio, text="Actualizar", command=self.actualizar_folio).pack(side=tk.LEFT, padx=10)
+
+        # Mostrar folio actual
+        ttk.Label(self.tab_folio, text="Folio actual:", font=('Helvetica', 10, 'bold')).pack(pady=(20, 5))
+        self.label_folio_actual = ttk.Label(self.tab_folio, text="", font=('Helvetica', 12))
+        self.label_folio_actual.pack()
+        self.actualizar_label_folio()
+
+    def actualizar_label_folio(self):
+        """Actualiza el label que muestra el folio actual"""
+        folio = obtener_configuracion('folio_actual')
+        self.label_folio_actual.config(text=folio)
+
+    def cargar_campesinos(self):
+        """Carga todos los campesinos en el treeview"""
+        self.tree_campesinos.delete(*self.tree_campesinos.get_children())
+        campesinos = obtener_todos_campesinos()
+        for c in campesinos:
+            self.tree_campesinos.insert('', tk.END, values=(
+                c['id'], c['numero_lote'], c['nombre'], c['localidad'], c['barrio'], f"{c['superficie']:.2f}"
+            ), tags=(str(c['id']),))
+
+    def cargar_siembras(self):
+        """Carga todas las siembras en el treeview"""
+        self.tree_siembras.delete(*self.tree_siembras.get_children())
+        siembras = obtener_todas_las_siembras()
+        for s in siembras:
+            campesino = obtener_campesino_por_id(s['campesino_id'])
+            nombre_camp = campesino['nombre'] if campesino else 'N/A'
+            self.tree_siembras.insert('', tk.END, values=(
+                s['id'], s['campesino_id'], nombre_camp, s['cultivo'], s['fecha_inicio'], s['fecha_fin'], s['ciclo'], 'Sí' if s['activa'] else 'No'
+            ), tags=(str(s['id']),))
+
+    def cargar_riegos(self):
+        """Carga todos los riegos en el treeview"""
+        self.tree_riegos.delete(*self.tree_riegos.get_children())
+        recibos = obtener_todos_los_recibos()
+        for r in recibos:
+            eliminado_texto = 'Sí' if r['eliminado'] else 'No'
+            self.tree_riegos.insert('', tk.END, values=(
+                r['id'], r['folio'], r['fecha'], r['hora'], r['nombre'], r['cultivo'], r['numero_riego'], f"${r['costo']:.2f}", eliminado_texto
+            ), tags=(str(r['id']),))
+
+    def on_buscar_campesino(self, event=None):
+        """Busca campesinos"""
+        termino = self.entry_busqueda_camp.get().strip()
+        self.tree_campesinos.delete(*self.tree_campesinos.get_children())
+        if not termino:
+            self.cargar_campesinos()
+            return
+        resultados = buscar_campesino(termino)
+        for c in resultados:
+            self.tree_campesinos.insert('', tk.END, values=(
+                c['id'], c['numero_lote'], c['nombre'], c['localidad'], c['barrio'], f"{c['superficie']:.2f}"
+            ), tags=(str(c['id']),))
+
+    def limpiar_busqueda_campesino(self):
+        """Limpia la búsqueda de campesinos"""
+        self.entry_busqueda_camp.delete(0, tk.END)
+        self.cargar_campesinos()
+
+    def editar_campesino(self):
+        """Abre ventana para editar campesino"""
+        selection = self.tree_campesinos.selection()
+        if not selection:
+            messagebox.showwarning("Advertencia", "Seleccione un campesino para editar")
+            return
+        item = self.tree_campesinos.item(selection[0])
+        campesino_id = int(item['tags'][0])
+        FormularioCampesino(self.ventana, campesino_id, self.ventana_principal)
+
+    def eliminar_campesino(self):
+        """Elimina un campesino"""
+        selection = self.tree_campesinos.selection()
+        if not selection:
+            messagebox.showwarning("Advertencia", "Seleccione un campesino para eliminar")
+            return
+        item = self.tree_campesinos.item(selection[0])
+        campesino_id = int(item['tags'][0])
+        campesino = obtener_campesino_por_id(campesino_id)
+        if not messagebox.askyesno("Confirmar", f"¿Eliminar al campesino {campesino['nombre']} (Lote: {campesino['numero_lote']})?"):
+            return
+        try:
+            eliminar_campesino(campesino_id)
+            messagebox.showinfo("Éxito", "Campesino eliminado")
+            self.cargar_campesinos()
+        except ValueError as e:
+            messagebox.showerror("Error", str(e))
+
+    def editar_siembra(self):
+        """Abre ventana para editar siembra"""
+        selection = self.tree_siembras.selection()
+        if not selection:
+            messagebox.showwarning("Advertencia", "Seleccione una siembra para editar")
+            return
+        item = self.tree_siembras.item(selection[0])
+        siembra_id = int(item['tags'][0])
+        SiembraForm(self.ventana, siembra_id, self)
+
+    def eliminar_siembra(self):
+        """Elimina una siembra"""
+        selection = self.tree_siembras.selection()
+        if not selection:
+            messagebox.showwarning("Advertencia", "Seleccione una siembra para eliminar")
+            return
+        item = self.tree_siembras.item(selection[0])
+        siembra_id = int(item['tags'][0])
+        siembra = obtener_siembra_por_id(siembra_id)
+        campesino = obtener_campesino_por_id(siembra['campesino_id'])
+        if not messagebox.askyesno("Confirmar", f"¿Eliminar la siembra de {siembra['cultivo']} de {campesino['nombre']}?"):
+            return
+        try:
+            eliminar_siembra(siembra_id)
+            messagebox.showinfo("Éxito", "Siembra eliminada")
+            self.cargar_siembras()
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al eliminar siembra: {str(e)}")
+
+    def editar_riego(self):
+        """Abre ventana para editar riego"""
+        selection = self.tree_riegos.selection()
+        if not selection:
+            messagebox.showwarning("Advertencia", "Seleccione un riego para editar")
+            return
+        item = self.tree_riegos.item(selection[0])
+        recibo_id = int(item['tags'][0])
+        ReciboForm(self.ventana, recibo_id, self)
+
+    def eliminar_riego(self):
+        """Elimina un riego"""
+        selection = self.tree_riegos.selection()
+        if not selection:
+            messagebox.showwarning("Advertencia", "Seleccione un riego para eliminar")
+            return
+        item = self.tree_riegos.item(selection[0])
+        recibo_id = int(item['tags'][0])
+        recibo = obtener_recibo_por_id(recibo_id)
+        if not messagebox.askyesno("Confirmar", f"¿Eliminar el recibo #{recibo['folio']} de {recibo['nombre']}?"):
+            return
+        try:
+            eliminar_recibo_db(recibo_id, "Eliminado desde panel de administración")
+            messagebox.showinfo("Éxito", "Riego eliminado")
+            self.cargar_riegos()
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al eliminar riego: {str(e)}")
+
+    def actualizar_folio(self):
+        """Actualiza el folio actual"""
+        nuevo_folio_str = self.entry_nuevo_folio.get().strip()
+        if not nuevo_folio_str:
+            messagebox.showwarning("Advertencia", "Ingrese un número de folio")
+            return
+        try:
+            nuevo_folio = int(nuevo_folio_str)
+            if nuevo_folio < 1:
+                raise ValueError("El folio debe ser positivo")
+        except ValueError:
+            messagebox.showerror("Error", "Ingrese un número entero positivo válido")
+            return
+
+        if not messagebox.askyesno("Confirmar", f"¿Actualizar el folio actual a {nuevo_folio}?"):
+            return
+
+        try:
+            if actualizar_folio_manual(nuevo_folio):
+                messagebox.showinfo("Éxito", f"Folio actualizado a {nuevo_folio}")
+                self.actualizar_label_folio()
+                self.entry_nuevo_folio.delete(0, tk.END)
+            else:
+                messagebox.showerror("Error", "No se pudo actualizar el folio")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al actualizar folio: {str(e)}")
+
+# ==================== FORMULARIO SIEMBRA ====================
+class SiembraForm:
+    """Formulario para crear/editar siembra"""
+    def __init__(self, parent, siembra_id=None, ventana_admin=None):
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title("Editar Siembra" if siembra_id else "Nueva Siembra")
+        self.ventana.geometry("500x400")
+        self.ventana.transient(parent)
+        self.ventana.grab_set()
+        self.siembra_id = siembra_id
+        self.ventana_admin = ventana_admin
+        self.siembra = obtener_siembra_por_id(siembra_id) if siembra_id else None
+        self.crear_widgets()
+
+    def crear_widgets(self):
+        """Crea los widgets del formulario"""
+        frame_form = ttk.Frame(self.ventana, padding="20")
+        frame_form.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(frame_form, text="Campesino ID (No editable):", font=('Helvetica', 10)).grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.label_campesino_id = ttk.Label(frame_form, text=self.siembra['campesino_id'] if self.siembra else "Seleccionar...")
+        self.label_campesino_id.grid(row=0, column=1, pady=5, padx=10)
+        if not self.siembra_id: # Solo para nueva siembra
+            ttk.Label(frame_form, text="Seleccionar Campesino:", font=('Helvetica', 10)).grid(row=1, column=0, sticky=tk.W, pady=5)
+            self.combo_campesino = ttk.Combobox(frame_form, width=30, state='readonly')
+            self.combo_campesino.grid(row=1, column=1, pady=5, padx=10)
+            self.cargar_campesinos_combo()
+            self.combo_campesino.bind('<<ComboboxSelected>>', self.on_campesino_seleccionado)
+
+        ttk.Label(frame_form, text="Cultivo:", font=('Helvetica', 10)).grid(row=2 if not self.siembra_id else 1, column=0, sticky=tk.W, pady=5)
+        self.combo_cultivo = ttk.Combobox(frame_form, values=CULTIVOS, width=30)
+        self.combo_cultivo.grid(row=2 if not self.siembra_id else 1, column=1, pady=5, padx=10)
+        if self.siembra:
+            self.combo_cultivo.set(self.siembra['cultivo'])
+
+        ttk.Label(frame_form, text="Ciclo:", font=('Helvetica', 10)).grid(row=3 if not self.siembra_id else 2, column=0, sticky=tk.W, pady=5)
+        self.entry_ciclo = ttk.Entry(frame_form, width=30)
+        self.entry_ciclo.grid(row=3 if not self.siembra_id else 2, column=1, pady=5, padx=10)
+        if self.siembra:
+            self.entry_ciclo.insert(0, self.siembra['ciclo'])
+
+        ttk.Label(frame_form, text="Fecha Inicio (YYYY-MM-DD):", font=('Helvetica', 10)).grid(row=4 if not self.siembra_id else 3, column=0, sticky=tk.W, pady=5)
+        self.entry_fecha_inicio = ttk.Entry(frame_form, width=30)
+        self.entry_fecha_inicio.grid(row=4 if not self.siembra_id else 3, column=1, pady=5, padx=10)
+        if self.siembra:
+            self.entry_fecha_inicio.insert(0, self.siembra['fecha_inicio'])
+
+        ttk.Label(frame_form, text="Fecha Fin (YYYY-MM-DD):", font=('Helvetica', 10)).grid(row=5 if not self.siembra_id else 4, column=0, sticky=tk.W, pady=5)
+        self.entry_fecha_fin = ttk.Entry(frame_form, width=30)
+        self.entry_fecha_fin.grid(row=5 if not self.siembra_id else 4, column=1, pady=5, padx=10)
+        if self.siembra and self.siembra['fecha_fin']:
+            self.entry_fecha_fin.insert(0, self.siembra['fecha_fin'])
+
+        ttk.Label(frame_form, text="Activa:", font=('Helvetica', 10)).grid(row=6 if not self.siembra_id else 5, column=0, sticky=tk.W, pady=5)
+        self.var_activa = tk.BooleanVar(value=self.siembra['activa'] if self.siembra else True)
+        self.check_activa = ttk.Checkbutton(frame_form, variable=self.var_activa)
+        self.check_activa.grid(row=6 if not self.siembra_id else 5, column=1, pady=5, padx=10, sticky=tk.W)
+
+        frame_botones = ttk.Frame(frame_form)
+        frame_botones.grid(row=7 if not self.siembra_id else 6, column=0, columnspan=2, pady=20)
+        ttk.Button(frame_botones, text="Guardar", command=self.guardar).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="Cancelar", command=self.ventana.destroy).pack(side=tk.LEFT, padx=5)
+
+    def cargar_campesinos_combo(self):
+        """Carga campesinos en el combobox"""
+        campesinos = obtener_todos_campesinos()
+        self.combo_campesino['values'] = [f"{c['id']} - {c['nombre']}" for c in campesinos]
+        self.campesinos_dict = {f"{c['id']} - {c['nombre']}": c['id'] for c in campesinos}
+
+    def on_campesino_seleccionado(self, event):
+        """Maneja la selección de campesino"""
+        seleccion = self.combo_campesino.get()
+        if seleccion in self.campesinos_dict:
+            campesino_id = self.campesinos_dict[seleccion]
+            self.label_campesino_id.config(text=campesino_id)
+
+    def guardar(self):
+        """Guarda la siembra"""
+        if not self.siembra_id and not self.combo_campesino.get():
+            messagebox.showwarning("Advertencia", "Seleccione un campesino")
+            return
+        datos = {
+            'cultivo': self.combo_cultivo.get().strip(),
+            'ciclo': self.entry_ciclo.get().strip(),
+            'fecha_inicio': self.entry_fecha_inicio.get().strip(),
+            'fecha_fin': self.entry_fecha_fin.get().strip(),
+            'activa': int(self.var_activa.get())
+        }
+        if not self.siembra_id:
+            datos['campesino_id'] = int(self.label_campesino_id.cget("text"))
+        # Validar
+        es_valido, mensaje = validar_siembra(datos)
+        if not es_valido:
+            messagebox.showerror("Error", mensaje)
+            return
+
+        try:
+            if self.siembra_id:
+                actualizar_siembra(self.siembra_id, datos)
+                messagebox.showinfo("Éxito", "Siembra actualizada")
+            else:
+                crear_siembra_manual(datos['campesino_id'], datos['cultivo'], datos['ciclo'], datos['fecha_inicio'])
+                messagebox.showinfo("Éxito", "Siembra creada")
+            self.ventana.destroy()
+            if self.ventana_admin:
+                self.ventana_admin.cargar_siembras()
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al guardar siembra: {str(e)}")
+
+# ==================== FORMULARIO RECIBO ====================
+class ReciboForm:
+    """Formulario para crear/editar recibo"""
+    def __init__(self, parent, recibo_id=None, ventana_admin=None):
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title("Editar Riego" if recibo_id else "Nuevo Riego")
+        self.ventana.geometry("500x400")
+        self.ventana.transient(parent)
+        self.ventana.grab_set()
+        self.recibo_id = recibo_id
+        self.ventana_admin = ventana_admin
+        self.recibo = obtener_recibo_por_id(recibo_id) if recibo_id else None
+        self.crear_widgets()
+
+    def crear_widgets(self):
+        """Crea los widgets del formulario"""
+        frame_form = ttk.Frame(self.ventana, padding="20")
+        frame_form.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(frame_form, text="Folio:", font=('Helvetica', 10)).grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.entry_folio = ttk.Entry(frame_form, width=30)
+        self.entry_folio.grid(row=0, column=1, pady=5, padx=10)
+        if self.recibo:
+            self.entry_folio.insert(0, self.recibo['folio'])
+            self.entry_folio.config(state='disabled') # Folio no editable si es existente
+        else:
+            # Para nuevo recibo, mostrar el siguiente folio
+            folio_sig = obtener_configuracion('folio_actual')
+            self.entry_folio.insert(0, folio_sig)
+
+        ttk.Label(frame_form, text="Fecha (YYYY-MM-DD):", font=('Helvetica', 10)).grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.entry_fecha = ttk.Entry(frame_form, width=30)
+        self.entry_fecha.grid(row=1, column=1, pady=5, padx=10)
+        if self.recibo:
+            self.entry_fecha.insert(0, self.recibo['fecha'])
+        else:
+            self.entry_fecha.insert(0, datetime.now().strftime('%Y-%m-%d'))
+
+        ttk.Label(frame_form, text="Hora (HH:MM:SS):", font=('Helvetica', 10)).grid(row=2, column=0, sticky=tk.W, pady=5)
+        self.entry_hora = ttk.Entry(frame_form, width=30)
+        self.entry_hora.grid(row=2, column=1, pady=5, padx=10)
+        if self.recibo:
+            self.entry_hora.insert(0, self.recibo['hora'])
+        else:
+            self.entry_hora.insert(0, datetime.now().strftime('%H:%M:%S'))
+
+        ttk.Label(frame_form, text="Campesino ID (No editable):", font=('Helvetica', 10)).grid(row=3, column=0, sticky=tk.W, pady=5)
+        self.label_campesino_id = ttk.Label(frame_form, text=self.recibo['campesino_id'] if self.recibo else "Seleccionar...")
+        self.label_campesino_id.grid(row=3, column=1, pady=5, padx=10)
+        if not self.recibo_id: # Solo para nuevo recibo
+            ttk.Label(frame_form, text="Seleccionar Campesino:", font=('Helvetica', 10)).grid(row=4, column=0, sticky=tk.W, pady=5)
+            self.combo_campesino = ttk.Combobox(frame_form, width=30, state='readonly')
+            self.combo_campesino.grid(row=4, column=1, pady=5, padx=10)
+            self.cargar_campesinos_combo()
+            self.combo_campesino.bind('<<ComboboxSelected>>', self.on_campesino_seleccionado)
+
+        ttk.Label(frame_form, text="Siembra ID (No editable):", font=('Helvetica', 10)).grid(row=5 if not self.recibo_id else 4, column=0, sticky=tk.W, pady=5)
+        self.label_siembra_id = ttk.Label(frame_form, text=self.recibo['siembra_id'] if self.recibo else "Seleccionar...")
+        self.label_siembra_id.grid(row=5 if not self.recibo_id else 4, column=1, pady=5, padx=10)
+        if not self.recibo_id: # Solo para nuevo recibo
+            ttk.Label(frame_form, text="Seleccionar Siembra:", font=('Helvetica', 10)).grid(row=6 if not self.recibo_id else 5, column=0, sticky=tk.W, pady=5)
+            self.combo_siembra = ttk.Combobox(frame_form, width=30, state='readonly')
+            self.combo_siembra.grid(row=6 if not self.recibo_id else 5, column=1, pady=5, padx=10)
+            self.combo_siembra.bind('<<ComboboxSelected>>', self.on_siembra_seleccionada)
+
+        ttk.Label(frame_form, text="Costo:", font=('Helvetica', 10)).grid(row=7 if not self.recibo_id else 6, column=0, sticky=tk.W, pady=5)
+        self.entry_costo = ttk.Entry(frame_form, width=30)
+        self.entry_costo.grid(row=7 if not self.recibo_id else 6, column=1, pady=5, padx=10)
+        if self.recibo:
+            self.entry_costo.insert(0, self.recibo['costo'])
+
+        ttk.Label(frame_form, text="Tipo Acción:", font=('Helvetica', 10)).grid(row=8 if not self.recibo_id else 7, column=0, sticky=tk.W, pady=5)
+        self.combo_tipo_accion = ttk.Combobox(frame_form, values=["Nueva siembra", "Riego adicional"], width=30, state='readonly')
+        self.combo_tipo_accion.grid(row=8 if not self.recibo_id else 7, column=1, pady=5, padx=10)
+        if self.recibo:
+            self.combo_tipo_accion.set(self.recibo['tipo_accion'])
+        else:
+            self.combo_tipo_accion.set("Riego adicional")
+
+        ttk.Label(frame_form, text="Eliminado:", font=('Helvetica', 10)).grid(row=9 if not self.recibo_id else 8, column=0, sticky=tk.W, pady=5)
+        self.var_eliminado = tk.BooleanVar(value=self.recibo['eliminado'] if self.recibo else False)
+        self.check_eliminado = ttk.Checkbutton(frame_form, variable=self.var_eliminado)
+        self.check_eliminado.grid(row=9 if not self.recibo_id else 8, column=1, pady=5, padx=10, sticky=tk.W)
+
+        frame_botones = ttk.Frame(frame_form)
+        frame_botones.grid(row=10 if not self.recibo_id else 9, column=0, columnspan=2, pady=20)
+        ttk.Button(frame_botones, text="Guardar", command=self.guardar).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="Cancelar", command=self.ventana.destroy).pack(side=tk.LEFT, padx=5)
+
+    def cargar_campesinos_combo(self):
+        """Carga campesinos en el combobox"""
+        campesinos = obtener_todos_campesinos()
+        self.combo_campesino['values'] = [f"{c['id']} - {c['nombre']}" for c in campesinos]
+        self.campesinos_dict = {f"{c['id']} - {c['nombre']}": c['id'] for c in campesinos}
+
+    def cargar_siembras_combo(self, campesino_id):
+        """Carga siembras de un campesino en el combobox"""
+        siembras = obtener_historial_siembras(campesino_id)
+        self.combo_siembra['values'] = [f"{s['id']} - {s['cultivo']} ({s['ciclo']})" for s in siembras]
+        self.siembras_dict = {f"{s['id']} - {s['cultivo']} ({s['ciclo']})": s['id'] for s in siembras}
+
+    def on_campesino_seleccionado(self, event):
+        """Maneja la selección de campesino"""
+        seleccion = self.combo_campesino.get()
+        if seleccion in self.campesinos_dict:
+            campesino_id = self.campesinos_dict[seleccion]
+            self.label_campesino_id.config(text=campesino_id)
+            self.cargar_siembras_combo(campesino_id)
+            self.combo_siembra.config(state='readonly')
+
+    def on_siembra_seleccionada(self, event):
+        """Maneja la selección de siembra"""
+        seleccion = self.combo_siembra.get()
+        if seleccion in self.siembras_dict:
+            siembra_id = self.siembras_dict[seleccion]
+            self.label_siembra_id.config(text=siembra_id)
+
+    def guardar(self):
+        """Guarda el recibo"""
+        if not self.recibo_id and (not self.combo_campesino.get() or not self.combo_siembra.get()):
+            messagebox.showwarning("Advertencia", "Seleccione campesino y siembra")
+            return
+        datos = {
+            'folio': self.entry_folio.get().strip(),
+            'fecha': self.entry_fecha.get().strip(),
+            'hora': self.entry_hora.get().strip(),
+            'costo': self.entry_costo.get().strip(),
+            'tipo_accion': self.combo_tipo_accion.get().strip(),
+            'eliminado': int(self.var_eliminado.get())
+        }
+        if not self.recibo_id:
+            datos['campesino_id'] = int(self.label_campesino_id.cget("text"))
+            datos['siembra_id'] = int(self.label_siembra_id.cget("text"))
+        # Validar
+        es_valido, mensaje = validar_recibo(datos)
+        if not es_valido:
+            messagebox.showerror("Error", mensaje)
+            return
+
+        try:
+            if self.recibo_id:
+                # Actualizar recibo existente
+                actualizar_recibo(self.recibo_id, datos)
+                messagebox.showinfo("Éxito", "Riego actualizado")
+            else:
+                # Crear nuevo recibo manualmente
+                folio = int(datos['folio'])
+                fecha = datos['fecha']
+                hora = datos['hora']
+                tipo_accion = datos['tipo_accion']
+                costo = float(datos['costo'])
+                crear_riego_manual(datos['campesino_id'], datos['siembra_id'], folio, fecha, hora, tipo_accion, costo)
+                messagebox.showinfo("Éxito", "Riego creado")
+            self.ventana.destroy()
+            if self.ventana_admin:
+                self.ventana_admin.cargar_riegos()
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al guardar riego: {str(e)}")
