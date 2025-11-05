@@ -43,12 +43,15 @@ class VentanaPrincipal:
         self.root = root
         self.root.title("Sistema de Control de Riegos - XICUCO")
         
-        # Configurar tamaño
+        # Configurar tamaño - Adaptable a diferentes resoluciones
         ancho = 1200
         alto = 700
         x = (self.root.winfo_screenwidth() // 2) - (ancho // 2)
         y = (self.root.winfo_screenheight() // 2) - (alto // 2)
         self.root.geometry(f'{ancho}x{alto}+{x}+{y}')
+        
+        # Hacer resizable
+        self.root.resizable(True, True)
         
         # Variables
         self.total_dia = tk.DoubleVar(value=0.0)
@@ -62,10 +65,47 @@ class VentanaPrincipal:
         self.actualizar_total_dia()
 
     def crear_widgets(self):
-        """Crea todos los widgets de la ventana principal"""
+        """Crea todos los widgets de la ventana principal - RESPONSIVE CON SCROLLBAR"""
+        
+        # ===== CANVAS SCROLLABLE PARA TODA LA VENTANA =====
+        frame_canvas = ttk.Frame(self.root)
+        frame_canvas.pack(fill=tk.BOTH, expand=True)
+        
+        canvas = tk.Canvas(frame_canvas, bg='white', highlightthickness=0)
+        scrollbar = ttk.Scrollbar(frame_canvas, orient=tk.VERTICAL, command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Permitir scroll con rueda de ratón SOLO en canvas
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        def _on_mousewheel_linux(event):
+            if event.num == 5:
+                canvas.yview_scroll(3, "units")
+            elif event.num == 4:
+                canvas.yview_scroll(-3, "units")
+        
+        import platform
+        if platform.system() == "Windows":
+            canvas.bind("<MouseWheel>", _on_mousewheel)
+        else:
+            canvas.bind("<Button-4>", _on_mousewheel_linux)
+            canvas.bind("<Button-5>", _on_mousewheel_linux)
+        
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        # ===== FIN CANVAS =====
         
         # Frame superior con título y total
-        frame_superior = ttk.Frame(self.root, padding="10")
+        frame_superior = ttk.Frame(scrollable_frame, padding="10")
         frame_superior.pack(fill=tk.X)
         
         nombre_oficina = obtener_configuracion('nombre_oficina') or 'SISTEMA DE CONTROL DE RIEGOS'
@@ -87,7 +127,7 @@ class VentanaPrincipal:
         label_total.pack(side=tk.LEFT)
         
         # Frame de búsqueda
-        frame_busqueda = ttk.LabelFrame(self.root, text="Buscar Campesino", padding="10")
+        frame_busqueda = ttk.LabelFrame(scrollable_frame, text="Buscar Campesino", padding="10")
         frame_busqueda.pack(fill=tk.X, padx=10, pady=5)
         
         ttk.Label(frame_busqueda, text="🔍").pack(side=tk.LEFT, padx=5)
@@ -103,12 +143,12 @@ class VentanaPrincipal:
                   command=self.abrir_form_nuevo_campesino).pack(side=tk.LEFT, padx=20)
         
         # Frame de resultados
-        frame_resultados = ttk.Frame(self.root, padding="10")
+        frame_resultados = ttk.Frame(scrollable_frame, padding="10")
         frame_resultados.pack(fill=tk.BOTH, expand=True, padx=10)
         
         # Crear Treeview
         columnas = ('lote', 'nombre', 'localidad', 'barrio', 'superficie', 'cultivo', 'riegos')
-        self.tree = ttk.Treeview(frame_resultados, columns=columnas, show='headings', height=15)
+        self.tree = ttk.Treeview(frame_resultados, columns=columnas, show='headings', height=12)
         
         # Encabezados
         self.tree.heading('lote', text='Lote')
@@ -119,58 +159,58 @@ class VentanaPrincipal:
         self.tree.heading('cultivo', text='Cultivo Actual')
         self.tree.heading('riegos', text='Riegos')
         
-        # Anchos de columna
-        self.tree.column('lote', width=80)
-        self.tree.column('nombre', width=250)
-        self.tree.column('localidad', width=150)
-        self.tree.column('barrio', width=100)
-        self.tree.column('superficie', width=80)
+        # Anchos de columna - RESPONSIVE
+        self.tree.column('lote', width=70)
+        self.tree.column('nombre', width=200)
+        self.tree.column('localidad', width=120)
+        self.tree.column('barrio', width=80)
+        self.tree.column('superficie', width=70)
         self.tree.column('cultivo', width=100)
-        self.tree.column('riegos', width=80)
+        self.tree.column('riegos', width=70)
         
         # Scrollbar
-        scrollbar = ttk.Scrollbar(frame_resultados, orient=tk.VERTICAL, command=self.tree.yview)
-        self.tree.configure(yscroll=scrollbar.set)
+        scrollbar_tree = ttk.Scrollbar(frame_resultados, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscroll=scrollbar_tree.set)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        scrollbar_tree.pack(side=tk.RIGHT, fill=tk.Y)
         
         # Bind selección
         self.tree.bind('<<TreeviewSelect>>', self.on_seleccionar_campesino)
         self.tree.bind('<Double-1>', self.on_doble_click)
         
-        # Frame de botones principales
-        frame_botones = ttk.Frame(self.root, padding="10")
-        frame_botones.pack(fill=tk.X, padx=10, pady=5)
+        # Frame de botones principales - CON WRAPPING EN WINDOWS
+        frame_botones = ttk.Frame(scrollable_frame, padding="5")
+        frame_botones.pack(fill=tk.X, padx=5, pady=2)
         
-        ttk.Button(frame_botones, text="🌱 Nueva Siembra",
+        ttk.Button(frame_botones, text="🌱 Siembra",
                   command=lambda: self.abrir_ventana_venta('nueva'),
-                  width=18).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame_botones, text="💧 Vender Riego",
+                  width=12).pack(side=tk.LEFT, padx=2, pady=2)
+        ttk.Button(frame_botones, text="💧 Riego",
                   command=lambda: self.abrir_ventana_venta('riego'),
-                  width=18).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame_botones, text="📋 Detalle del Día",
+                  width=12).pack(side=tk.LEFT, padx=2, pady=2)
+        ttk.Button(frame_botones, text="📋 Detalle",
                   command=self.abrir_detalle_dia,
-                  width=18).pack(side=tk.LEFT, padx=5)
+                  width=12).pack(side=tk.LEFT, padx=2, pady=2)
         ttk.Button(frame_botones, text="📜 Historial",
                   command=self.abrir_historial_campesino,
-                  width=18).pack(side=tk.LEFT, padx=5)
+                  width=12).pack(side=tk.LEFT, padx=2, pady=2)
         
         # Frame de botones inferiores
-        frame_botones_inf = ttk.Frame(self.root, padding="10")
-        frame_botones_inf.pack(fill=tk.X, padx=10, pady=5)
+        frame_botones_inf = ttk.Frame(scrollable_frame, padding="5")
+        frame_botones_inf.pack(fill=tk.X, padx=5, pady=2)
         
-        ttk.Button(frame_botones_inf, text="📊 Reporte del Día",
-                  command=self.generar_reporte_dia).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones_inf, text="📊 Reporte",
+                  command=self.generar_reporte_dia, width=12).pack(side=tk.LEFT, padx=2, pady=2)
         ttk.Button(frame_botones_inf, text="🔒 Cerrar Día",
-                  command=self.cerrar_dia_dialog).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame_botones_inf, text="🔄 Reiniciar Ciclo",
-                  command=lambda: VentanaReiniciarCiclo(self.root)).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame_botones_inf, text="⚙️ Configuración",
-                  command=self.abrir_configuracion).pack(side=tk.LEFT, padx=5)
+                  command=self.cerrar_dia_dialog, width=12).pack(side=tk.LEFT, padx=2, pady=2)
+        ttk.Button(frame_botones_inf, text="🔄 Ciclo",
+                  command=lambda: VentanaReiniciarCiclo(self.root), width=12).pack(side=tk.LEFT, padx=2, pady=2)
+        ttk.Button(frame_botones_inf, text="⚙️ Config",
+                  command=self.abrir_configuracion, width=12).pack(side=tk.LEFT, padx=2, pady=2)
         ttk.Button(frame_botones_inf, text="💾 Backup",
-                  command=self.crear_backup_manual).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame_botones_inf, text="🔧 Administrar Datos",
-                  command=self.abrir_administrar_datos).pack(side=tk.LEFT, padx=5)
+                  command=self.crear_backup_manual, width=12).pack(side=tk.LEFT, padx=2, pady=2)
+        ttk.Button(frame_botones_inf, text="🔧 Admin",
+                  command=self.abrir_administrar_datos, width=12).pack(side=tk.LEFT, padx=2, pady=2)
         
         # Cargar todos los campesinos
         self.cargar_todos_campesinos()
@@ -322,7 +362,6 @@ class VentanaPrincipal:
                     messagebox.showerror("Error", "No se pudo crear el backup")
             except Exception as e:
                 messagebox.showerror("Error", f"Error al crear backup:\n{str(e)}")
-
 # ==================== VENTANA DE VENTA ====================
 
 class VentanaVenta:
