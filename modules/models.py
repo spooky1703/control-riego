@@ -9,10 +9,19 @@ from typing import Optional, List, Dict, Tuple
 # Ruta de la base de datos
 DB_PATH = os.path.join('database', 'riego.db')
 def get_connection():
-    """Obtiene una conexión a la base de datos"""
+    """Obtiene una conexión a la base de datos con mejor manejo de timeouts"""
     os.makedirs('database', exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    
+    # Crear conexión con timeout más alto y modo journal
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)  # 10 segundos de timeout
     conn.row_factory = sqlite3.Row
+    
+    # Configurar para evitar bloqueos
+    conn.isolation_level = None  # Autocommit mode para mejor concurrencia
+    conn.execute("PRAGMA journal_mode = WAL")  # Write-Ahead Logging
+    conn.execute("PRAGMA busy_timeout = 10000")  # 10 segundos en modo busy
+    conn.execute("PRAGMA synchronous = NORMAL")  # Mejor rendimiento
+    
     return conn
 def init_db():
     """Inicializa la base de datos con todas las tablas necesarias"""
@@ -112,6 +121,14 @@ def init_db():
     conn.commit()
     conn.close()
     print("Base de datos inicializada correctamente")
+    print(""" 
+                 █████╗ ██╗      ██████╗ ███╗   ██╗███████╗ ██████╗      ██████╗ ██████╗ ██████╗ ██╗███╗   ██╗ ██████╗ 
+                ██╔══██╗██║     ██╔═══██╗████╗  ██║██╔════╝██╔═══██╗    ██╔════╝██╔═══██╗██╔══██╗██║████╗  ██║██╔════╝ 
+                ███████║██║     ██║   ██║██╔██╗ ██║███████╗██║   ██║    ██║     ██║   ██║██║  ██║██║██╔██╗ ██║██║  ███╗
+                ██╔══██║██║     ██║   ██║██║╚██╗██║╚════██║██║   ██║    ██║     ██║   ██║██║  ██║██║██║╚██╗██║██║   ██║
+                ██║  ██║███████╗╚██████╔╝██║ ╚████║███████║╚██████╔╝    ╚██████╗╚██████╔╝██████╔╝██║██║ ╚████║╚██████╔╝
+                ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝  ╚═══╝╚══════╝ ╚═════╝      ╚═════╝ ╚═════╝ ╚═════╝ ╚═╝╚═╝  ╚═══╝ ╚═════╝                                                                  
+                """)
 # ==================== FUNCIONES DE CAMPESINOS ====================
 def buscar_campesino(termino: str) -> List[Dict]:
     """Busca campesinos por lote o nombre"""
@@ -283,34 +300,70 @@ def crear_siembra(campesino_id: int, cultivo: str, ciclo: str) -> int:
     conn.commit()
     conn.close()
     return siembra_id
-def actualizar_siembra(siembra_id: int, nuevos_datos: Dict) -> bool:
-    """Actualiza los datos de una siembra (cultivo, ciclo, fecha_inicio, fecha_fin, activa)"""
-    conn = get_connection()
-    cursor = conn.cursor()
-    datos_previos = obtener_siembra_por_id(siembra_id)
+def actualizar_siembra(siembra_id: int, datos: Dict) -> bool:
+    """
+    Actualiza datos de una siembra en la base de datos
+    IMPORTANTE: Ahora incluye COMMIT para guardar cambios
+    """
+    conn = None
     try:
-        campos_actualizar = []
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Construir dinámicamente la consulta UPDATE
+        campos = []
         valores = []
-        campos_permitidos = ['cultivo', 'ciclo', 'fecha_inicio', 'fecha_fin', 'activa']
-        for campo in campos_permitidos:
-            if campo in nuevos_datos:
-                campos_actualizar.append(f"{campo} = ?")
-                valores.append(nuevos_datos[campo])
-        if not campos_actualizar:
-            conn.close()
+        
+        if 'cultivo' in datos:
+            campos.append('cultivo = ?')
+            valores.append(datos['cultivo'])
+        
+        if 'ciclo' in datos:
+            campos.append('ciclo = ?')
+            valores.append(datos['ciclo'])
+        
+        if 'fecha_inicio' in datos:
+            campos.append('fecha_inicio = ?')
+            valores.append(datos['fecha_inicio'])
+        
+        if 'fecha_fin' in datos:
+            campos.append('fecha_fin = ?')
+            valores.append(datos['fecha_fin'])
+        
+        if 'numero_riegos' in datos:
+            campos.append('numero_riegos = ?')
+            valores.append(datos['numero_riegos'])
+        
+        if 'activa' in datos:
+            campos.append('activa = ?')
+            valores.append(datos['activa'])
+        
+        # Si no hay campos para actualizar, retornar False
+        if not campos:
             return False
+        
+        # Agregar el ID al final de los valores
         valores.append(siembra_id)
-        query = f"UPDATE siembras SET {', '.join(campos_actualizar)} WHERE id = ?"
-        cursor.execute(query, valores)
-        registrar_auditoria(
-            'EDITAR_SIEMBRA',
-            f"Siembra actualizada: ID {siembra_id}",
-            json.dumps(datos_previos)
-        )
+        
+        # Ejecutar UPDATE
+        sql = f"UPDATE siembras SET {', '.join(campos)} WHERE id = ?"
+        cursor.execute(sql, valores)
+        
+        # CRÍTICO: Hacer COMMIT para guardar los cambios en la BD
         conn.commit()
-        return True
+        
+        # Verificar si se actualizó alguna fila
+        return cursor.rowcount > 0
+    
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        print(f"Error al actualizar siembra: {e}")
+        raise
+    
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 def eliminar_siembra(siembra_id: int) -> bool:
     """Elimina una siembra (lógicamente, marcando como inactiva)"""
     conn = get_connection()
