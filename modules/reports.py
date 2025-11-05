@@ -54,40 +54,55 @@ def _buscar_sumatra() -> str | None:
 
 def _imprimir_pdf_windows(ruta_pdf: str, impresora: str | None = None) -> None:
     """
-    Intenta imprimir en Windows en este orden:
-    1) SumatraPDF (no requiere asociación de archivos)
-    2) pywin32 ShellExecute 'printto' (si está disponible)
-    3) PowerShell Start-Process -Verb Print (requiere asociación de archivos)
-    Lanza excepción si todas fallan.
+    Imprime en Windows con múltiples fallbacks:
+    1) SumatraPDF (mejor opción)
+    2) Abrir PDF y dejar que el usuario imprima manualmente
     """
-    # 1) SumatraPDF: imprime sin cuadros de diálogo y sale al terminar
+    import subprocess
+    
+    # 1) Intentar con SumatraPDF
     sumatra = _buscar_sumatra()
     if sumatra:
-        args = [sumatra]
-        if impresora:
-            args += ["-print-to", impresora]
-        else:
-            args += ["-print-to-default"]
-        args += ["-exit-on-print", ruta_pdf]
-        subprocess.run(args, check=True)
-        return
-
-    # 2) pywin32 ShellExecute 'printto' (si está instalado en el MISMO intérprete)
+        try:
+            args = [sumatra]
+            if impresora:
+                args += ["-print-to", impresora]
+            else:
+                args += ["-print-to-default"]
+            args += ["-exit-on-print", ruta_pdf]
+            subprocess.run(args, check=True, timeout=10)
+            print(f"✓ Impreso con SumatraPDF: {ruta_pdf}")
+            return
+        except Exception as e:
+            print(f"⚠ SumatraPDF falló: {e}")
+    
+    # 2) Fallback: Solo ABRIR el PDF (el usuario imprime manualmente)
     try:
-        import win32api, win32print  # type: ignore
-        if not impresora:
-            impresora = win32print.GetDefaultPrinter()
-        win32api.ShellExecute(0, "printto", ruta_pdf, f'"{impresora}"', ".", 0)
+        os.startfile(ruta_pdf)
+        print(f"⚠ PDF abierto para impresión manual: {ruta_pdf}")
+        # Mostrar mensaje al usuario
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showinfo(
+            "Impresión Manual", 
+            "El PDF se ha abierto.\n\n"
+            "Por favor, presiona Ctrl+P para imprimir manualmente.\n\n"
+            "Recomendación: Instala SumatraPDF para impresión automática."
+        )
+        root.destroy()
         return
-    except Exception:
-        pass
+    except Exception as e:
+        raise RuntimeError(
+            f"No se puede imprimir en Windows.\n\n"
+            f"Soluciones:\n"
+            f"1. Instala SumatraPDF (https://www.sumatrapdfreader.org/)\n"
+            f"2. Configura una impresora predeterminada en Windows\n"
+            f"3. Asocia PDFs con Adobe Reader\n\n"
+            f"Error: {e}"
+        )
 
-    # 3) PowerShell Start-Process -Verb Print (depende de asociación del PDF)
-    ps = [
-        "powershell", "-NoProfile", "-Command",
-        f"Start-Process -FilePath '{ruta_pdf}' -Verb Print"
-    ]
-    subprocess.run(ps, check=True)
 
 # ==================== GENERACIÓN DE RECIBOS ====================
 

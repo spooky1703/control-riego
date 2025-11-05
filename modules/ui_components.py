@@ -1,6 +1,6 @@
 #models/ui_components.py
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog, scrolledtext
+from tkinter import ttk, messagebox, filedialog, scrolledtext, simpledialog
 from datetime import datetime
 from typing import Optional, Dict, List
 import os
