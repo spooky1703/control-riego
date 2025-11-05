@@ -565,70 +565,72 @@ def imprimir_recibo(ruta_pdf: str, impresora: str = None):
 
 def obtener_impresoras_disponibles() -> List[str]:
     """
-    Obtiene lista de impresoras disponibles.
-    Usa win32print en Windows, lpstat en Mac/Linux
+    Lista impresoras disponibles:
+    - Windows: win32print si está, si no PowerShell/WMIC.
+    - macOS/Linux: lpstat.
     """
     try:
-        import platform
+        import platform, subprocess, os
         sistema = platform.system()
-        
+
         if sistema == "Windows":
+            # 1) Intento con pywin32
             try:
-                import win32print
+                import win32print  # si falla, vamos al fallback
                 impresoras = win32print.EnumPrinters(2)
-                return [imp[2] for imp in impresoras]
-            except ImportError:
-                print("Advertencia: win32print no está instalado. Devolviendo lista vacía.")
-                return []
-        
-        elif sistema == "Darwin":  # macOS
-            import subprocess
+                return [imp[2] for imp in impresoras if len(imp) >= 3]
+            except Exception:
+                pass  # seguir al fallback
+
+            # 2) Fallback PowerShell (Get-CimInstance es compatible amplio)
             try:
-                resultado = subprocess.run(
-                    ["lpstat", "-p", "-d"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                impresoras = []
-                for linea in resultado.stdout.split('\n'):
-                    if linea.startswith('printer'):
-                        # Formato: "printer nombre is idle..."
-                        partes = linea.split()
-                        if len(partes) >= 2:
-                            impresoras.append(partes[1])
-                return impresoras if impresoras else ["Impresora por defecto"]
-            except Exception as e:
-                print(f"Error al obtener impresoras en Mac: {e}")
-                return ["Impresora por defecto"]
-        
-        elif sistema == "Linux":
-            import subprocess
+                ps = [
+                    "powershell", "-NoProfile", "-Command",
+                    "Get-CimInstance -ClassName Win32_Printer | Select-Object -ExpandProperty Name"
+                ]
+                r = subprocess.run(ps, capture_output=True, text=True, timeout=5)
+                names = [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
+                if names:
+                    return names
+            except Exception:
+                pass
+
+            # 3) Fallback WMIC (más legacy, pero aún presente en muchas máquinas)
             try:
-                resultado = subprocess.run(
-                    ["lpstat", "-p", "-d"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                impresoras = []
-                for linea in resultado.stdout.split('\n'):
-                    if linea.startswith('printer'):
-                        partes = linea.split()
-                        if len(partes) >= 2:
-                            impresoras.append(partes[1])
-                return impresoras if impresoras else ["Impresora por defecto"]
-            except Exception as e:
-                print(f"Error al obtener impresoras en Linux: {e}")
-                return ["Impresora por defecto"]
-        
-        else:
+                r = subprocess.run(["wmic", "printer", "get", "name"],
+                                   capture_output=True, text=True, timeout=5)
+                names = [ln.strip() for ln in r.stdout.splitlines()[1:] if ln.strip()]
+                if names:
+                    return names
+            except Exception:
+                pass
+
             return ["Impresora por defecto"]
-    
-    except Exception as e:
-        print(f"Error al obtener impresoras: {e}")
+
+        elif sistema == "Darwin":  # macOS
+            r = subprocess.run(["lpstat", "-p", "-d"], capture_output=True, text=True, timeout=5)
+            impresoras = []
+            for ln in r.stdout.splitlines():
+                if ln.startswith("printer"):
+                    partes = ln.split()
+                    if len(partes) >= 2:
+                        impresoras.append(partes[1])
+            return impresoras if impresoras else ["Impresora por defecto"]
+
+        else:  # Linux
+            r = subprocess.run(["lpstat", "-p", "-d"], capture_output=True, text=True, timeout=5)
+            impresoras = []
+            for ln in r.stdout.splitlines():
+                if ln.startswith("printer"):
+                    partes = ln.split()
+                    if len(partes) >= 2:
+                        impresoras.append(partes[1])
+            return impresoras if impresoras else ["Impresora por defecto"]
+
+    except Exception:
         return ["Impresora por defecto"]
-    
+
+
 def abrir_pdf(ruta_pdf: str):
 
     """Abre el PDF con el visor predeterminado del sistema"""
