@@ -342,119 +342,157 @@ class VentanaVenta:
         self.crear_widgets()
 
     def crear_widgets(self):
-        """Crea los widgets de la ventana"""
+        """Crea todos los widgets de la ventana principal - CON SCROLLBAR"""
         
-        frame_principal = ttk.Frame(self.ventana, padding="20")
-        frame_principal.pack(fill=tk.BOTH, expand=True)
+        # ===== CREAR CANVAS CON SCROLLBAR (PARA PANTALLAS PEQUEÑAS) =====
+        # Frame contenedor para canvas y scrollbar
+        frame_canvas = ttk.Frame(self.root)
+        frame_canvas.pack(fill=tk.BOTH, expand=True)
         
-        # Frame de información
-        frame_info = ttk.LabelFrame(frame_principal, text="📋 Datos del Campesino", padding="15")
-        frame_info.pack(fill=tk.X, padx=0, pady=10)
+        # Crear canvas
+        canvas = tk.Canvas(frame_canvas, bg='white', highlightthickness=0)
+        scrollbar = ttk.Scrollbar(frame_canvas, orient=tk.VERTICAL, command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
         
-        info_text = f"""
-Nombre: {self.campesino['nombre']}
-Lote: {self.campesino['numero_lote']}
-Localidad: {self.campesino['localidad']}
-Barrio: {self.campesino['barrio']}
-Superficie: {self.campesino['superficie']} hectáreas
-"""
-        ttk.Label(frame_info, text=info_text, font=('Helvetica', 10)).pack(anchor=tk.W)
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
         
-        # Información de siembra actual
-        siembra = obtener_siembra_activa(self.campesino['id'])
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
         
-        if siembra:
-            info_siembra = f"\n✅ Siembra activa: {siembra['cultivo']} - {siembra['numero_riegos']} riegos realizados"
-            ttk.Label(frame_info, text=info_siembra,
-                     font=('Helvetica', 10, 'bold'),
-                     foreground='green').pack(anchor=tk.W)
+        # Permitir scroll con rueda de ratón
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        def _on_mousewheel_linux(event):
+            if event.num == 5:
+                canvas.yview_scroll(3, "units")
+            elif event.num == 4:
+                canvas.yview_scroll(-3, "units")
+        
+        import platform
+        if platform.system() == "Windows":
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
         else:
-            ttk.Label(frame_info, text="\n⚠️ No tiene siembra activa",
-                     font=('Helvetica', 10, 'bold'),
-                     foreground='orange').pack(anchor=tk.W)
+            canvas.bind_all("<Button-4>", _on_mousewheel_linux)
+            canvas.bind_all("<Button-5>", _on_mousewheel_linux)
         
-        # ===== SECCIÓN DE EDITAR SIEMBRA/RIEGO =====
-        frame_editar = ttk.LabelFrame(frame_principal, text="✏️ Editar Siembra/Riego", padding="10")
-        frame_editar.pack(fill=tk.X, padx=0, pady=10)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        # ===== FIN CANVAS CON SCROLLBAR =====
         
-        ttk.Button(frame_editar, text="✏️ Administrar Siembra y Riegos",
-                  command=self.abrir_editar_siembra_riego,
-                  width=50).pack(padx=5, pady=5)
+        # Frame superior con título y total (DENTRO DEL SCROLLABLE FRAME)
+        frame_superior = ttk.Frame(scrollable_frame, padding="10")
+        frame_superior.pack(fill=tk.X)
         
-        ttk.Label(frame_editar, text="Haz clic para editar/agregar siembras y riegos",
-                 font=('Helvetica', 9),
-                 foreground='gray').pack()
-        # ===== FIN DE SECCIÓN =====
+        nombre_oficina = obtener_configuracion('nombre_oficina') or 'SISTEMA DE CONTROL DE RIEGOS'
+        ttk.Label(frame_superior, text=f"🌾 {nombre_oficina[:60]}",
+                font=('Helvetica', 11, 'bold')).pack()
         
-        # Frame de opciones
-        frame_opciones = ttk.LabelFrame(frame_principal, text="¿Qué desea hacer?", padding="15")
-        frame_opciones.pack(fill=tk.X, padx=0, pady=10)
+        fecha_texto = datetime.now().strftime('%d/%m/%Y')
+        ttk.Label(frame_superior, text=f"📅 {fecha_texto}",
+                font=('Helvetica', 10)).pack()
         
-        self.var_accion = tk.StringVar(value=self.tipo)
+        # Panel de venta del día
+        frame_venta = ttk.LabelFrame(frame_superior, text="VENTA DEL DÍA", padding="10")
+        frame_venta.pack(pady=5)
         
-        # Radio buttons
-        rb_nueva = ttk.Radiobutton(frame_opciones,
-                                   text="🌱 Iniciar nueva siembra (cerrará la siembra actual)",
-                                   variable=self.var_accion,
-                                   value='nueva',
-                                   command=self.on_cambiar_accion)
-        rb_nueva.pack(anchor=tk.W, pady=5)
+        ttk.Label(frame_venta, text="💵 $", font=('Helvetica', 20)).pack(side=tk.LEFT)
+        label_total = ttk.Label(frame_venta, textvariable=self.total_dia,
+                            font=('Helvetica', 20, 'bold'),
+                            foreground='green')
+        label_total.pack(side=tk.LEFT)
         
-        rb_riego = ttk.Radiobutton(frame_opciones,
-                                   text="💧 Vender riego adicional",
-                                   variable=self.var_accion,
-                                   value='riego',
-                                   command=self.on_cambiar_accion)
-        rb_riego.pack(anchor=tk.W, pady=5)
+        # Frame de búsqueda
+        frame_busqueda = ttk.LabelFrame(scrollable_frame, text="Buscar Campesino", padding="10")
+        frame_busqueda.pack(fill=tk.X, padx=10, pady=5)
         
-        # Selección de cultivo
-        frame_cultivo = ttk.Frame(frame_opciones)
-        frame_cultivo.pack(fill=tk.X, pady=10)
+        ttk.Label(frame_busqueda, text="🔍").pack(side=tk.LEFT, padx=5)
+        self.entry_busqueda = ttk.Entry(frame_busqueda, width=40, font=('Helvetica', 11))
+        self.entry_busqueda.pack(side=tk.LEFT, padx=5)
+        self.entry_busqueda.bind('<KeyRelease>', self.on_buscar)
         
-        ttk.Label(frame_cultivo, text="Cultivo:", font=('Helvetica', 10)).pack(side=tk.LEFT, padx=5)
-        self.combo_cultivo = ttk.Combobox(frame_cultivo,
-                                         values=CULTIVOS,
-                                         state='readonly',
-                                         width=20)
-        self.combo_cultivo.pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_busqueda, text="Buscar",
+                command=self.on_buscar).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_busqueda, text="Limpiar",
+                command=self.limpiar_busqueda).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_busqueda, text="➕ Nuevo Campesino",
+                command=self.abrir_form_nuevo_campesino).pack(side=tk.LEFT, padx=20)
         
-        # Preseleccionar cultivo si hay siembra activa
-        if siembra and self.tipo == 'riego':
-            idx = CULTIVOS.index(siembra['cultivo']) if siembra['cultivo'] in CULTIVOS else -1
-            if idx >= 0:
-                self.combo_cultivo.current(idx)
-            self.combo_cultivo.config(state='disabled')
+        # Frame de resultados
+        frame_resultados = ttk.Frame(scrollable_frame, padding="10")
+        frame_resultados.pack(fill=tk.BOTH, expand=True, padx=10)
         
-        # Frame de costo
-        frame_costo = ttk.LabelFrame(frame_principal, text="💰 Monto a Cobrar", padding="15")
-        frame_costo.pack(fill=tk.X, padx=0, pady=10)
+        # Crear Treeview
+        columnas = ('lote', 'nombre', 'localidad', 'barrio', 'superficie', 'cultivo', 'riegos')
+        self.tree = ttk.Treeview(frame_resultados, columns=columnas, show='headings', height=15)
         
-        costo = calcular_costo(self.campesino['superficie'])
+        # Encabezados
+        self.tree.heading('lote', text='Lote')
+        self.tree.heading('nombre', text='Nombre')
+        self.tree.heading('localidad', text='Localidad')
+        self.tree.heading('barrio', text='Barrio')
+        self.tree.heading('superficie', text='Sup. (ha)')
+        self.tree.heading('cultivo', text='Cultivo Actual')
+        self.tree.heading('riegos', text='Riegos')
         
-        ttk.Label(frame_costo,
-                 text=f"${costo:,.2f}",
-                 font=('Helvetica', 20, 'bold'),
-                 foreground='green').pack()
+        # Anchos de columna
+        self.tree.column('lote', width=80)
+        self.tree.column('nombre', width=250)
+        self.tree.column('localidad', width=150)
+        self.tree.column('barrio', width=100)
+        self.tree.column('superficie', width=80)
+        self.tree.column('cultivo', width=100)
+        self.tree.column('riegos', width=80)
         
-        tarifa = obtener_configuracion('tarifa_hectarea')
-        ttk.Label(frame_costo,
-                 text=f"({self.campesino['superficie']} ha × ${tarifa}/ha)",
-                 font=('Helvetica', 9),
-                 foreground='gray').pack()
+        # Scrollbar del Treeview
+        scrollbar_tree = ttk.Scrollbar(frame_resultados, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscroll=scrollbar_tree.set)
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar_tree.pack(side=tk.RIGHT, fill=tk.Y)
         
-        # Frame de botones
-        frame_botones = ttk.Frame(frame_principal)
-        frame_botones.pack(fill=tk.X, padx=0, pady=20)
+        # Bind selección
+        self.tree.bind('<<TreeviewSelect>>', self.on_seleccionar_campesino)
+        self.tree.bind('<Double-1>', self.on_doble_click)
         
-        ttk.Button(frame_botones,
-                  text="✅ Generar Recibo e Imprimir",
-                  command=self.generar_recibo,
-                  width=30).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame_botones,
-                  text="❌ Cancelar",
-                  command=self.ventana.destroy,
-                  width=15).pack(side=tk.LEFT, padx=5)
-
+        # Frame de botones principales
+        frame_botones = ttk.Frame(scrollable_frame, padding="10")
+        frame_botones.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Button(frame_botones, text="🌱 Nueva Siembra",
+                command=lambda: self.abrir_ventana_venta('nueva'),
+                width=18).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="💧 Vender Riego",
+                command=lambda: self.abrir_ventana_venta('riego'),
+                width=18).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="📋 Detalle del Día",
+                command=self.abrir_detalle_dia,
+                width=18).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="📜 Historial",
+                command=self.abrir_historial_campesino,
+                width=18).pack(side=tk.LEFT, padx=5)
+        
+        # Frame de botones inferiores
+        frame_botones_inf = ttk.Frame(scrollable_frame, padding="10")
+        frame_botones_inf.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Button(frame_botones_inf, text="📊 Reporte del Día",
+                command=self.generar_reporte_dia).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones_inf, text="🔒 Cerrar Día",
+                command=self.cerrar_dia_dialog).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones_inf, text="🔄 Reiniciar Ciclo",
+                command=lambda: VentanaReiniciarCiclo(self.root)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones_inf, text="⚙️ Configuración",
+                command=self.abrir_configuracion).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones_inf, text="💾 Backup",
+                command=self.crear_backup_manual).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones_inf, text="🔧 Administrar Datos",
+                command=self.abrir_administrar_datos).pack(side=tk.LEFT, padx=5)
+        
+        # Cargar todos los campesinos
+        self.cargar_todos_campesinos()
     def abrir_editar_siembra_riego(self):
         """Abre la ventana para editar siembra y riego"""
         VentanaEditarSiembraRiego(self.ventana, self.campesino['id'], self.campesino['nombre'], self.ventana_principal)
