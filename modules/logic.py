@@ -8,19 +8,13 @@ import shutil
 import os
 
 from modules.models import (
-
-obtener_configuracion, actualizar_configuracion,
-
-obtener_siembra_activa, crear_siembra, cerrar_siembra,
-
-incrementar_riegos, crear_recibo, registrar_auditoria,
-
-obtener_campesino_por_id, obtener_recibos_dia, DB_PATH,
-
-actualizar_siembra, eliminar_siembra, decrementar_riegos,
-
-obtener_siembra_por_id, actualizar_recibo, eliminar_recibo as eliminar_recibo_db
-
+    obtener_configuracion, actualizar_configuracion,
+    obtener_siembra_activa, crear_siembra, cerrar_siembra,
+    incrementar_riegos, crear_recibo, registrar_auditoria,
+    obtener_campesino_por_id, obtener_recibos_dia, DB_PATH,
+    actualizar_siembra, eliminar_siembra, decrementar_riegos,
+    obtener_siembra_por_id, actualizar_recibo, eliminar_recibo as eliminar_recibo_db,
+    obtener_recibo_por_id  
 )
 
 # ==================== CÁLCULOS ====================
@@ -180,22 +174,6 @@ def incrementar_folio() -> int:
     actualizar_configuracion('folio_actual', str(nuevo_folio))
 
     return folio_actual
-
-def decrementar_folio() -> int:
-    """
-    Decrementa el folio actual (usado cuando se elimina un recibo).
-    Retorna el nuevo valor del folio.
-    """
-    folio_actual = obtener_folio_actual()
-    
-    # No permitir que baje de 1
-    if folio_actual > 1:
-        nuevo_folio = folio_actual - 1
-        actualizar_configuracion('folio_actual', str(nuevo_folio))
-        return nuevo_folio
-    else:
-        # Si ya está en 1, mantenerlo en 1
-        return folio_actual
 
 
 def reiniciar_folios_y_ciclo(nuevo_ciclo: str) -> bool:
@@ -452,15 +430,21 @@ def calcular_total_dia(fecha: Optional[str] = None) -> float:
 
 def eliminar_recibo_dia(recibo_id: int, motivo: str = "") -> float:
     """
-    Elimina un recibo del día y devuelve el monto que debe restarse del total.
-    IMPORTANTE: También decrementa el folio actual para que ese número nunca haya existido.
-    """
-    from modules.models import obtener_recibo_por_id, eliminar_recibo_db
+    Elimina un recibo del día y revierte la operación (siembra o riego).
     
+    IMPORTANTE:
+    - Si es "Nueva siembra" con 1 riego: Elimina la siembra completa
+    - Si es "Nueva siembra" con más riegos: Solo decrementa riegos
+    - Si es "Riego adicional": Decrementa el contador de riegos
+    - Decrementa el folio actual si es el último recibo
+    """
+    
+    # Obtener datos del recibo
     recibo = obtener_recibo_por_id(recibo_id)
     if not recibo:
         raise ValueError("Recibo no encontrado")
     
+    # Validar que sea del día actual
     fecha_hoy = datetime.now().strftime('%Y-%m-%d')
     if recibo['fecha'] != fecha_hoy:
         raise ValueError("Solo se pueden eliminar recibos del día actual")
@@ -468,31 +452,79 @@ def eliminar_recibo_dia(recibo_id: int, motivo: str = "") -> float:
     if recibo['eliminado']:
         raise ValueError("El recibo ya está eliminado")
     
-    # Verificar si es el último recibo creado (tiene el folio más alto)
-    folio_actual = obtener_folio_actual()
-    es_ultimo_recibo = (recibo['folio'] == folio_actual - 1)  # -1 porque ya se incrementó
+    # Obtener la siembra asociada
+    siembra = obtener_siembra_por_id(recibo['siembra_id'])
+    if not siembra:
+        raise ValueError("Siembra asociada no encontrada")
     
-    # Eliminar el recibo
+    # ===== REVERTIR LA OPERACIÓN SEGÚN EL TIPO =====
+    if recibo['tipo_accion'] == 'Nueva siembra':
+        # Si es nueva siembra Y solo tiene 1 riego, eliminar la siembra completa
+        if siembra['numero_riegos'] == 1:
+            eliminar_siembra(recibo['siembra_id'])
+            mensaje_auditoria = (
+                f"Recibo #{recibo['folio']} eliminado (Nueva siembra). "
+                f"Siembra #{recibo['siembra_id']} eliminada completamente. "
+                f"Campesino: {recibo['nombre']}. Motivo: {motivo}"
+            )
+        else:
+            # Si tiene más riegos, solo decrementar
+            decrementar_riegos(recibo['siembra_id'])
+            mensaje_auditoria = (
+                f"Recibo #{recibo['folio']} eliminado (Nueva siembra con múltiples riegos). "
+                f"Riego decrementado en siembra #{recibo['siembra_id']}. "
+                f"Campesino: {recibo['nombre']}. Motivo: {motivo}"
+            )
+    else:
+        # Si es "Riego adicional", solo decrementar el contador
+        if siembra['numero_riegos'] > 0:
+            decrementar_riegos(recibo['siembra_id'])
+            mensaje_auditoria = (
+                f"Recibo #{recibo['folio']} eliminado (Riego adicional). "
+                f"Riego decrementado en siembra #{recibo['siembra_id']}. "
+                f"Campesino: {recibo['nombre']}. Motivo: {motivo}"
+            )
+        else:
+            mensaje_auditoria = (
+                f"Recibo #{recibo['folio']} eliminado (Riego adicional). "
+                f"No se pudo decrementar riego (ya estaba en 0). "
+                f"Campesino: {recibo['nombre']}. Motivo: {motivo}"
+            )
+    
+    # ===== VERIFICAR SI ES EL ÚLTIMO RECIBO =====
+    folio_actual = obtener_folio_actual()
+    es_ultimo_recibo = (recibo['folio'] == folio_actual - 1)
+    
+    # Eliminar el recibo (marcarlo como eliminado en la BD)
     eliminar_recibo_db(recibo_id, motivo)
     
-    # IMPORTANTE: Decrementar el folio para que ese número no haya existido
+    # ===== DECREMENTAR FOLIO SI ES EL ÚLTIMO =====
     if es_ultimo_recibo:
         nuevo_folio = decrementar_folio()
-        registrar_auditoria(
-            'FOLIO_DECREMENTADO',
-            f"Folio decrementado de {folio_actual} a {nuevo_folio} tras eliminar recibo #{recibo['folio']}. Motivo: {motivo}",
-            None
-        )
+        mensaje_auditoria += f" | Folio decrementado de {folio_actual} a {nuevo_folio}."
     else:
-        # Si no es el último recibo, solo registrar la eliminación sin tocar el folio
-        registrar_auditoria(
-            'RECIBO_ELIMINADO',
-            f"Recibo #{recibo['folio']} eliminado (no se modificó folio actual porque no era el más reciente). Motivo: {motivo}",
-            None
-        )
+        mensaje_auditoria += f" | Folio NO decrementado (no era el más reciente)."
+    
+    # Registrar en auditoría
+    registrar_auditoria('RECIBO_ELIMINADO', mensaje_auditoria, None)
     
     return recibo['costo']
 
+
+def decrementar_folio() -> int:
+    """
+    Decrementa el folio actual en 1 (usado al eliminar el último recibo).
+    No permite que el folio baje de 1.
+    """
+    folio_actual = obtener_folio_actual()
+    
+    if folio_actual > 1:
+        nuevo_folio = folio_actual - 1
+        actualizar_configuracion('folio_actual', str(nuevo_folio))
+        return nuevo_folio
+    else:
+        # Si ya está en 1, mantenerlo
+        return 1
 
 def cerrar_dia() -> Dict:
 

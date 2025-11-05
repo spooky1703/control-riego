@@ -296,7 +296,6 @@ class VentanaPrincipal:
         """Abre la ventana de estadísticas"""
         VentanaEstadisticas(self.root)
 
-    
     def on_buscar(self, event=None):
         """Busca campesinos"""
         termino = self.entry_busqueda.get().strip()
@@ -613,7 +612,7 @@ Superficie: {self.campesino['superficie']} hectáreas
             # Actualizar ventana principal
             self.ventana_principal.actualizar_total_dia()
             self.ventana_principal.cargar_todos_campesinos()
-            
+
             # Cerrar ventana
             self.ventana.destroy()
             
@@ -1025,7 +1024,8 @@ class VentanaDetalleDia:
         
         self.crear_widgets()
         self.cargar_recibos()
-    
+        self.ventana_principal.cargar_todos_campesinos()  # Refresca la tabla principal
+
     def crear_widgets(self):
         """Crea los widgets de la ventana"""
         
@@ -1128,49 +1128,83 @@ class VentanaDetalleDia:
         self.label_cantidad.config(text=f"Recibos emitidos: {len(recibos)}")
     
     def eliminar_recibo(self):
-        """Elimina el recibo seleccionado (marcándolo como eliminado)"""
+        """Elimina el recibo seleccionado y actualiza TODA la UI"""
         selection = self.tree.selection()
         if not selection:
             messagebox.showwarning("Advertencia", "Debe seleccionar un recibo")
             return
-
+        
         item = self.tree.item(selection[0])
-        recibo_id = int(item['tags'][0]) # Asumiendo que el ID está en tags
-
-        # Obtener datos del recibo antes de eliminar (opcional, para confirmación)
-        from modules.models import obtener_recibo_por_id
+        recibo_id = int(item['tags'][0])
+        
+        # Obtener datos del recibo
         recibo = obtener_recibo_por_id(recibo_id)
-        if not recibo or recibo.get('eliminado'):
-             messagebox.showwarning("Error", "El recibo no existe o ya está eliminado.")
-             return
-
-        # Solicitar motivo de eliminación
-        motivo = simpledialog.askstring("Motivo de Eliminación", "Ingrese el motivo para eliminar el recibo:")
-        if motivo is None: # El usuario canceló
+        if not recibo:
+            messagebox.showerror("Error", "Recibo no encontrado")
             return
-        if not motivo.strip():
-            messagebox.showwarning("Advertencia", "Debe ingresar un motivo para eliminar el recibo.")
+        
+        # Validar si es el último recibo
+        from modules.logic import obtener_folio_actual
+        folio_actual = obtener_folio_actual()
+        es_ultimo_recibo = (recibo['folio'] == folio_actual - 1)
+        
+        if not es_ultimo_recibo:
+            advertencia = (
+                f"⚠️ ADVERTENCIA: Este recibo (folio #{recibo['folio']}) NO es el más reciente.\n\n"
+                f"Folio actual del sistema: {folio_actual - 1}\n\n"
+                f"Al eliminar este recibo:\n"
+                f"• El folio NO se decrementará\n"
+                f"• Quedará un 'hueco' en la numeración\n"
+                f"• Se recomienda SOLO eliminar el último recibo creado\n\n"
+                f"¿Está seguro de continuar?"
+            )
+            
+            if not messagebox.askyesno("Confirmar Eliminación", advertencia):
+                return
+        
+        # Pedir motivo de eliminación
+        motivo = simpledialog.askstring("Motivo de Eliminación", 
+                                        "Ingrese el motivo para eliminar el recibo:")
+        
+        if not motivo:
+            messagebox.showwarning("Advertencia", "Debe ingresar un motivo")
             return
+        
+        # Confirmar eliminación
+        if messagebox.askyesno("Confirmar", 
+                            f"¿Eliminar recibo folio #{recibo['folio']}?\n"
+                            f"Campesino: {recibo['nombre']}\n"
+                            f"Monto: ${recibo['costo']:.2f}"):
+            try:
+                # Eliminar recibo (esto revierte la siembra/riego automáticamente)
+                from modules.logic import eliminar_recibo_dia
+                monto = eliminar_recibo_dia(recibo_id, motivo)
+                
+                messagebox.showinfo("Éxito", 
+                                f"Recibo eliminado correctamente\n"
+                                f"Folio: {recibo['folio']}\n"
+                                f"Monto restado: ${monto:.2f}")
+                
+                # ===== ACTUALIZAR TODA LA INTERFAZ =====
+                # 1. Actualizar total del día
+                self.ventana_principal.actualizar_total_dia()
+                
+                # 2. Recargar lista de recibos del día
+                self.cargar_recibos()
+                
+                # 3. IMPORTANTE: Recargar tabla de campesinos (refleja cambios en siembra/riegos)
+                self.ventana_principal.cargar_todos_campesinos()
+                
+                # 4. Si estás en la ventana principal, actualizar folio visible
+                if hasattr(self.ventana_principal, 'actualizar_folio_ui'):
+                    self.ventana_principal.actualizar_folio_ui()
+                
+            except ValueError as e:
+                messagebox.showerror("Error", str(e))
+            except Exception as e:
+                messagebox.showerror("Error", f"Error al eliminar recibo:\n{str(e)}")
 
-        try:
-            # Obtener el monto antes de eliminar para actualizar el total
-            monto_anterior = recibo['costo']
-
-            # Eliminar (marcar como eliminado) usando la función corregida
-            eliminar_recibo_db(recibo_id, motivo)
-
-            messagebox.showinfo("Éxito", f"Recibo eliminado exitosamente\nFolio: {recibo['folio']}\nMotivo: {motivo}\nMonto restado: ${monto_anterior:.2f}")
-
-            # Actualizar la interfaz
-            self.cargar_recibos() # Recarga la tabla de recibos
-            if self.ventana_principal: # Si tiene referencia a la ventana principal
-                self.ventana_principal.actualizar_total_dia() # Actualiza el total del día
-
-        except ValueError as e:
-            messagebox.showerror("Error de Validación", str(e))
-        except Exception as e:
-            messagebox.showerror("Error", f"Error al eliminar recibo:\n{str(e)}")
-
+    
     def reimprimir_recibo(self):
         """Reimprime el recibo seleccionado - RECIBOS TEMPORALES"""
         selection = self.tree.selection()

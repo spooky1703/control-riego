@@ -365,31 +365,40 @@ def actualizar_siembra(siembra_id: int, datos: Dict) -> bool:
         if conn:
             conn.close()
 def eliminar_siembra(siembra_id: int) -> bool:
-    """Elimina una siembra (lógicamente, marcando como inactiva)"""
+    """Elimina una siembra (marca como inactiva)"""
     conn = get_connection()
     cursor = conn.cursor()
-    datos_previos = obtener_siembra_por_id(siembra_id)
-    cursor.execute('''
-        UPDATE siembras 
-        SET activa = 0, fecha_fin = date('now')
-        WHERE id = ?
-    ''', (siembra_id,))
-    registrar_auditoria(
-        'ELIMINAR_SIEMBRA',
-        f"Siembra eliminada (cerrada): ID {siembra_id}",
-        json.dumps(datos_previos)
-    )
-    conn.commit()
-    conn.close()
-    return True
+    
+    try:
+        cursor.execute("""
+            UPDATE siembras 
+            SET activa = 0
+            WHERE id = ?
+        """, (siembra_id,))
+        
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
+
 def obtener_siembra_por_id(siembra_id: int) -> Optional[Dict]:
     """Obtiene una siembra por su ID"""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM siembras WHERE id = ?', (siembra_id,))
+    
+    cursor.execute("""
+        SELECT * FROM siembras WHERE id = ?
+    """, (siembra_id,))
+    
     row = cursor.fetchone()
     conn.close()
-    return dict(row) if row else None
+    
+    if row:
+        return dict(row)
+    return None
 def obtener_todas_las_siembras() -> List[Dict]:
     """Obtiene todas las siembras (activas e inactivas)"""
     conn = get_connection()
@@ -420,20 +429,25 @@ def incrementar_riegos(siembra_id: int):
     ''', (siembra_id,))
     conn.commit()
     conn.close()
-def decrementar_riegos(siembra_id: int):
-    """Decrementa el contador de riegos de una siembra (si > 0)"""
+def decrementar_riegos(siembra_id: int) -> bool:
+    """Decrementa en 1 el número de riegos de una siembra"""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE siembras 
-        SET numero_riegos = CASE 
-            WHEN numero_riegos > 0 THEN numero_riegos - 1 
-            ELSE 0 
-        END
-        WHERE id = ?
-    ''', (siembra_id,))
-    conn.commit()
-    conn.close()
+    
+    try:
+        cursor.execute("""
+            UPDATE siembras 
+            SET numero_riegos = numero_riegos - 1
+            WHERE id = ? AND numero_riegos > 0
+        """, (siembra_id,))
+        
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
 # ==================== FUNCIONES DE RECIBOS ====================
 def crear_recibo(datos: Dict) -> int:
     """Crea un nuevo recibo"""
