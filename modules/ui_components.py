@@ -18,7 +18,8 @@ from modules.models import (
     crear_recibo as crear_recibo_db, actualizar_recibo as actualizar_recibo_db,
     eliminar_recibo as eliminar_recibo_db, obtener_recibo_por_id,
     obtener_todos_los_recibos, obtener_todas_las_siembras, incrementar_riegos,
-    obtener_estadisticas_generales, obtener_estadisticas_por_cultivo
+    obtener_estadisticas_generales, obtener_estadisticas_por_cultivo, renombrar_campesino, partir_lote  
+
 )
 
 
@@ -249,7 +250,9 @@ class VentanaPrincipal:
         ttk.Button(frame_botones, text="📜 Historial",
                    command=self.abrir_historial_campesino,
                    width=12).pack(side=tk.LEFT, padx=2, pady=2)
-        
+        ttk.Button(frame_botones, text="✏️ Editar Lote",
+          command=self.abrir_editar_lote,
+          width=12).pack(side=tk.LEFT, padx=2, pady=2)
         # Frame de botones inferiores
         frame_botones_inf = ttk.Frame(scrollable_frame, padding="5")
         frame_botones_inf.pack(fill=tk.X, padx=5, pady=2)
@@ -376,6 +379,14 @@ class VentanaPrincipal:
         """Actualiza el total del día"""
         total = calcular_total_dia(self.fecha_actual)
         self.total_dia.set(f"{total:,.2f}")
+  
+    def abrir_editar_lote(self):
+        """Abre ventana para editar lote (renombrar o partir)"""
+        if not self.campesino_seleccionado:
+            messagebox.showwarning("Advertencia", "Debe seleccionar un campesino primero")
+            return
+        
+        VentanaEditarLote(self.root, self.campesino_seleccionado, self)
     
     def generar_reporte_dia(self):
         """Genera el reporte del día"""
@@ -1336,15 +1347,26 @@ class FormularioCampesino:
         frame_botones = ttk.Frame(frame_form)
         frame_botones.grid(row=7, column=0, columnspan=2, pady=20)
         
-        ttk.Button(frame_botones,
-                   text="💾 Guardar",
-                   command=self.guardar,
-                   width=15).pack(side=tk.LEFT, padx=5)
-        
-        ttk.Button(frame_botones,
-                   text="❌ Cancelar",
-                   command=self.ventana.destroy,
-                   width=15).pack(side=tk.LEFT, padx=5)
+        if self.campesino:
+            frameespecial = ttk.LabelFrame(frameform, text="⚙️ Operaciones Especiales", padding="10")
+            frameespecial.grid(row=6, column=0, columnspan=2, pady=10, sticky='ew')  # ✅ Cambiar a grid
+            
+            ttk.Button(frameespecial, text="✏️ Renombrar Dueño",
+                    command=self.abrir_renombrar,
+                    width=25).pack(side=tk.LEFT, padx=5)
+            
+            ttk.Button(frameespecial, text="✂️ Partir Lote",
+                    command=self.abrir_partir_lote,
+                    width=25).pack(side=tk.LEFT, padx=5)
+
+        # Frame de botones (Guardar/Cancelar)
+        framebotones = ttk.Frame(frameform)
+        framebotones.grid(row=7, column=0, columnspan=2, pady=20)
+
+        ttk.Button(framebotones, text="💾 Guardar",
+                command=self.guardar, width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Button(framebotones, text="❌ Cancelar",
+                command=self.ventana.destroy, width=15).pack(side=tk.LEFT, padx=5)
     
     def guardar(self):
         """Guarda los datos del campesino"""
@@ -1386,6 +1408,27 @@ class FormularioCampesino:
             messagebox.showerror("Error", str(e))
         except Exception as e:
             messagebox.showerror("Error", f"Error al guardar:\n{str(e)}")
+
+    def abrir_renombrar(self):
+        """Abre ventana para renombrar dueño"""
+        VentanaRenombrarCampesino(
+            self.ventana,
+            self.campesino_id,
+            self.campesino['nombre'],
+            self.campesino['numero_lote'],
+            self.ventana_principal
+        )
+
+    def abrir_partir_lote(self):
+        """Abre ventana para partir lote"""
+        VentanaPartirLote(
+            self.ventana,
+            self.campesino_id,
+            self.campesino['nombre'],
+            self.campesino['numero_lote'],
+            self.campesino['superficie'],
+            self.ventana_principal
+        )
 
 
 # ==================== VENTANA HISTORIAL ====================
@@ -1981,3 +2024,332 @@ class VentanaEstadisticas:
         self.stats = obtener_estadisticas_generales()
         self.ventana.destroy()
         VentanaEstadisticas(self.ventana.master)
+
+
+class VentanaRenombrarCampesino:
+    """Ventana para renombrar el dueño de un lote"""
+    
+    def __init__(self, parent, campesino_id, campesino_nombre, lote, ventana_principal):
+        self.campesino_id = campesino_id
+        self.nombre_actual = campesino_nombre
+        self.lote = lote
+        self.ventana_principal = ventana_principal
+        
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title(f"✏️ Renombrar Dueño - Lote {lote}")
+        self.ventana.geometry("450x200")
+        self.ventana.transient(parent)
+        self.ventana.grab_set()
+        
+        self.crear_widgets()
+    
+    def crear_widgets(self):
+        frame = ttk.Frame(self.ventana, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(frame, text=f"📋 Lote: {self.lote}", 
+                 font=('Helvetica', 11, 'bold')).pack(pady=5)
+        
+        ttk.Label(frame, text=f"Nombre actual: {self.nombre_actual}",
+                 font=('Helvetica', 10)).pack(pady=5)
+        
+        ttk.Label(frame, text="Nuevo nombre del dueño:",
+                 font=('Helvetica', 10)).pack(pady=(15, 5))
+        
+        self.entry_nombre = ttk.Entry(frame, width=40, font=('Helvetica', 11))
+        self.entry_nombre.pack(pady=5)
+        self.entry_nombre.insert(0, self.nombre_actual)
+        self.entry_nombre.select_range(0, tk.END)
+        self.entry_nombre.focus()
+        
+        frame_botones = ttk.Frame(frame)
+        frame_botones.pack(pady=20)
+        
+        ttk.Button(frame_botones, text="✅ Guardar",
+                  command=self.guardar).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="❌ Cancelar",
+                  command=self.ventana.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def guardar(self):
+        nuevo_nombre = self.entry_nombre.get().strip()
+        
+        if not nuevo_nombre:
+            messagebox.showwarning("Advertencia", "Debe ingresar un nombre")
+            return
+        
+        if nuevo_nombre == self.nombre_actual:
+            messagebox.showinfo("Sin cambios", "El nombre no ha cambiado")
+            return
+        
+        if messagebox.askyesno("Confirmar",
+                              f"¿Cambiar nombre de:\n'{self.nombre_actual}'\na:\n'{nuevo_nombre}'?"):
+            try:
+                from modules.models import renombrar_campesino
+                renombrar_campesino(self.campesino_id, nuevo_nombre)
+                
+                messagebox.showinfo("Éxito", "Nombre actualizado correctamente")
+                
+                # Actualizar UI
+                self.ventana_principal.cargar_todos_campesinos()
+                self.ventana.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Error al renombrar:\n{str(e)}")
+
+
+class VentanaPartirLote:
+    """Ventana para partir/subdividir un lote en múltiples sublotes"""
+    
+    def __init__(self, parent, campesino_id, campesino_nombre, lote, superficie_original, ventana_principal):
+        self.campesino_id = campesino_id
+        self.nombre_original = campesino_nombre
+        self.lote = lote
+        self.superficie_original = superficie_original
+        self.ventana_principal = ventana_principal
+        
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title(f"✂️ Partir Lote {lote}")
+        self.ventana.geometry("500x550")
+        self.ventana.transient(parent)
+        self.ventana.grab_set()
+        
+        self.entries_superficie = []
+        self.entries_nombre = []
+        
+        self.crear_widgets()
+    
+    def crear_widgets(self):
+        # Canvas con scrollbar
+        self.canvas, self.frame_principal = crear_ventana_scrollable(self.ventana, None)
+        
+        frame = ttk.Frame(self.frame_principal, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Información
+        ttk.Label(frame, text=f"✂️ PARTIR LOTE {self.lote}",
+                 font=('Helvetica', 12, 'bold')).pack(pady=10)
+        
+        info_frame = ttk.LabelFrame(frame, text="Información Actual", padding="10")
+        info_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(info_frame, text=f"Dueño: {self.nombre_original}").pack(anchor=tk.W)
+        ttk.Label(info_frame, text=f"Superficie total: {self.superficie_original} hectáreas").pack(anchor=tk.W)
+        
+        # Selector de divisiones
+        divisiones_frame = ttk.Frame(frame)
+        divisiones_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(divisiones_frame, text="¿En cuántos lotes se dividirá? (no incluye el original):",
+                 font=('Helvetica', 10)).pack(anchor=tk.W)
+        
+        self.spin_divisiones = ttk.Spinbox(divisiones_frame, from_=1, to=10, width=10)
+        self.spin_divisiones.set(2)
+        self.spin_divisiones.pack(anchor=tk.W, pady=5)
+        
+        ttk.Button(divisiones_frame, text="🔄 Generar Campos",
+                  command=self.generar_campos).pack(anchor=tk.W, pady=5)
+        
+        # Frame para los campos dinámicos
+        self.frame_campos = ttk.Frame(frame)
+        self.frame_campos.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        # Botones finales
+        frame_botones = ttk.Frame(frame)
+        frame_botones.pack(pady=20)
+        
+        ttk.Button(frame_botones, text="✅ Partir Lote",
+                  command=self.partir_lote).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="❌ Cancelar",
+                  command=self.ventana.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def generar_campos(self):
+        # Limpiar campos anteriores
+        for widget in self.frame_campos.winfo_children():
+            widget.destroy()
+        
+        self.entries_superficie = []
+        self.entries_nombre = []
+        
+        num_divisiones = int(self.spin_divisiones.get())
+        
+        # Campo para el lote original
+        frame_original = ttk.LabelFrame(self.frame_campos, text=f"Lote {self.lote} (ORIGINAL)", padding="10")
+        frame_original.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(frame_original, text="Superficie (ha):").pack(side=tk.LEFT, padx=5)
+        entry_sup = ttk.Entry(frame_original, width=10)
+        entry_sup.pack(side=tk.LEFT, padx=5)
+        self.entries_superficie.append(entry_sup)
+        
+        ttk.Label(frame_original, text="Dueño:").pack(side=tk.LEFT, padx=5)
+        entry_nom = ttk.Entry(frame_original, width=25)
+        entry_nom.insert(0, self.nombre_original)
+        entry_nom.pack(side=tk.LEFT, padx=5)
+        self.entries_nombre.append(entry_nom)
+        
+        # Campos para los nuevos sublotes
+        for i in range(num_divisiones):
+            frame_sublote = ttk.LabelFrame(self.frame_campos, 
+                                           text=f"Lote {self.lote}-{i+1} (NUEVO)", 
+                                           padding="10")
+            frame_sublote.pack(fill=tk.X, pady=5)
+            
+            ttk.Label(frame_sublote, text="Superficie (ha):").pack(side=tk.LEFT, padx=5)
+            entry_sup = ttk.Entry(frame_sublote, width=10)
+            entry_sup.pack(side=tk.LEFT, padx=5)
+            self.entries_superficie.append(entry_sup)
+            
+            ttk.Label(frame_sublote, text="Dueño:").pack(side=tk.LEFT, padx=5)
+            entry_nom = ttk.Entry(frame_sublote, width=25)
+            entry_nom.insert(0, f"{self.nombre_original} (Heredero {i+1})")
+            entry_nom.pack(side=tk.LEFT, padx=5)
+            self.entries_nombre.append(entry_nom)
+    
+    def partir_lote(self):
+        if not self.entries_superficie:
+            messagebox.showwarning("Advertencia", "Debe generar los campos primero")
+            return
+        
+        try:
+            # Obtener superficies
+            superficies = []
+            for entry in self.entries_superficie:
+                valor = entry.get().strip()
+                if not valor:
+                    raise ValueError("Todas las superficies son obligatorias")
+                superficies.append(float(valor))
+            
+            # Validar suma
+            suma = sum(superficies)
+            if abs(suma - self.superficie_original) > 0.01:
+                raise ValueError(
+                    f"La suma de superficies ({suma:.4f} ha) no coincide "
+                    f"con la original ({self.superficie_original:.4f} ha)"
+                )
+            
+            # Obtener nombres
+            nombres = []
+            for entry in self.entries_nombre:
+                nombre = entry.get().strip()
+                if not nombre:
+                    raise ValueError("Todos los nombres son obligatorios")
+                nombres.append(nombre)
+            
+            # Confirmar
+            num_divisiones = len(superficies) - 1
+            mensaje = f"¿Partir lote {self.lote} en {len(superficies)} sublotes?\n\n"
+            mensaje += f"• {self.lote}: {superficies[0]:.4f} ha - {nombres[0]}\n"
+            for i in range(num_divisiones):
+                mensaje += f"• {self.lote}-{i+1}: {superficies[i+1]:.4f} ha - {nombres[i+1]}\n"
+            
+            if not messagebox.askyesno("Confirmar Partición", mensaje):
+                return
+            
+            # Partir lote
+            from modules.models import partir_lote, renombrar_campesino
+            nuevos_ids = partir_lote(self.campesino_id, num_divisiones, superficies)
+            
+            # Actualizar nombres
+            renombrar_campesino(self.campesino_id, nombres[0])
+            for i, nuevo_id in enumerate(nuevos_ids):
+                renombrar_campesino(nuevo_id, nombres[i+1])
+            
+            messagebox.showinfo("Éxito",
+                              f"Lote partido exitosamente\n"
+                              f"Se crearon {num_divisiones} nuevos sublotes")
+            
+            # Actualizar UI
+            self.ventana_principal.cargar_todos_campesinos()
+            self.ventana.destroy()
+            
+        except ValueError as e:
+            messagebox.showerror("Error de Validación", str(e))
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al partir lote:\n{str(e)}")
+
+
+class VentanaEditarLote:
+    """Ventana de opciones para editar un lote (renombrar o partir)"""
+    
+    def __init__(self, parent, campesino, ventana_principal):
+        self.campesino = campesino
+        self.ventana_principal = ventana_principal
+        
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title(f"✏️ Editar Lote {campesino['numero_lote']}")
+        self.ventana.geometry("500x350")
+        self.ventana.transient(parent)
+        self.ventana.grab_set()
+        
+        self.crear_widgets()
+    
+    def crear_widgets(self):
+        frame = ttk.Frame(self.ventana, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Título
+        ttk.Label(frame, text=f"✏️ EDITAR LOTE {self.campesino['numero_lote']}",
+                 font=('Helvetica', 14, 'bold')).pack(pady=10)
+        
+        # Información actual
+        info_frame = ttk.LabelFrame(frame, text="Información Actual", padding="15")
+        info_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(info_frame, text=f"Dueño: {self.campesino['nombre']}",
+                 font=('Helvetica', 10)).pack(anchor=tk.W, pady=2)
+        ttk.Label(info_frame, text=f"Lote: {self.campesino['numero_lote']}",
+                 font=('Helvetica', 10)).pack(anchor=tk.W, pady=2)
+        ttk.Label(info_frame, text=f"Superficie: {self.campesino['superficie']} ha",
+                 font=('Helvetica', 10)).pack(anchor=tk.W, pady=2)
+        ttk.Label(info_frame, text=f"Localidad: {self.campesino['localidad']}",
+                 font=('Helvetica', 10)).pack(anchor=tk.W, pady=2)
+        
+        # Opciones
+        opciones_frame = ttk.LabelFrame(frame, text="Opciones", padding="15")
+        opciones_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        # Botón renombrar
+        btn_renombrar = ttk.Button(opciones_frame, 
+                                   text="✏️ Renombrar Dueño",
+                                   command=self.renombrar)
+        btn_renombrar.pack(fill=tk.X, pady=5)
+        ttk.Label(opciones_frame, text="Cambiar el nombre del dueño del lote",
+                 font=('Helvetica', 9), foreground='gray').pack(anchor=tk.W, padx=20)
+        
+        # Separador
+        ttk.Separator(opciones_frame, orient='horizontal').pack(fill=tk.X, pady=10)
+        
+        # Botón partir
+        btn_partir = ttk.Button(opciones_frame,
+                               text="✂️ Partir Lote (Subdividir)",
+                               command=self.partir)
+        btn_partir.pack(fill=tk.X, pady=5)
+        ttk.Label(opciones_frame, text="Dividir el lote en múltiples sublotes (herencia)",
+                 font=('Helvetica', 9), foreground='gray').pack(anchor=tk.W, padx=20)
+        
+        # Botón cerrar
+        ttk.Button(frame, text="❌ Cerrar",
+                  command=self.ventana.destroy).pack(pady=10)
+    
+    def renombrar(self):
+        """Abre ventana para renombrar"""
+        self.ventana.destroy()
+        VentanaRenombrarCampesino(
+            self.ventana.master,
+            self.campesino['id'],
+            self.campesino['nombre'],
+            self.campesino['numero_lote'],
+            self.ventana_principal
+        )
+    
+    def partir(self):
+        """Abre ventana para partir lote"""
+        self.ventana.destroy()
+        VentanaPartirLote(
+            self.ventana.master,
+            self.campesino['id'],
+            self.campesino['nombre'],
+            self.campesino['numero_lote'],
+            self.campesino['superficie'],
+            self.ventana_principal
+        )

@@ -816,3 +816,146 @@ def obtener_estadisticas_por_cultivo(cultivo: str) -> Dict:
         'riegos_promedio': round(riegos_promedio, 1),
         'total_riegos': total_riegos
     }
+    
+def partir_lote(campesino_id: int, num_divisiones: int, superficies: List[float]) -> List[int]:
+    """
+    Parte un lote en múltiples sublotes.
+    
+    Args:
+        campesino_id: ID del campesino original
+        num_divisiones: Número de nuevos lotes a crear (no incluye el original)
+        superficies: Lista con las superficies [original, sublote1, sublote2, ...]
+    
+    Returns:
+        Lista con los IDs de los nuevos campesinos creados
+        
+    Ejemplo:
+        Lote 803 (1.0 ha) se parte en 3:
+        - 803 (original): 0.5 ha
+        - 803-1: 0.25 ha
+        - 803-2: 0.25 ha
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Obtener datos del campesino original
+        cursor.execute("SELECT * FROM campesinos WHERE id = ?", (campesino_id,))
+        original = dict(cursor.fetchone())
+        
+        if not original:
+            raise ValueError("Campesino no encontrado")
+        
+        # Validar que la suma de superficies sea igual a la original
+        superficie_total = sum(superficies)
+        if abs(superficie_total - original['superficie']) > 0.01:
+            raise ValueError(
+                f"Error: La suma de superficies ({superficie_total:.2f} ha) "
+                f"no coincide con la original ({original['superficie']:.2f} ha)"
+            )
+        
+        # Validar que el número de superficies coincida
+        if len(superficies) != num_divisiones + 1:
+            raise ValueError(
+                f"Error: Se esperaban {num_divisiones + 1} superficies "
+                f"pero se recibieron {len(superficies)}"
+            )
+        
+        # 1. Actualizar el lote original con la nueva superficie
+        cursor.execute("""
+            UPDATE campesinos 
+            SET superficie = ?
+            WHERE id = ?
+        """, (superficies[0], campesino_id))
+        
+        # 2. Crear los nuevos sublotes
+        nuevos_ids = []
+        lote_base = original['numero_lote']
+        
+        for i in range(num_divisiones):
+            nuevo_lote = f"{lote_base}-{i+1}"
+            nueva_superficie = superficies[i+1]
+            
+            # Crear nuevo campesino (sublote)
+            cursor.execute("""
+                INSERT INTO campesinos (
+                    numero_lote, nombre, localidad, barrio, superficie
+                ) VALUES (?, ?, ?, ?, ?)
+            """, (
+                nuevo_lote,
+                f"{original['nombre']} (Heredero {i+1})",  # Nombre temporal
+                original['localidad'],
+                original['barrio'],
+                nueva_superficie
+            ))
+            
+            nuevos_ids.append(cursor.lastrowid)
+        
+        conn.commit()
+        
+        # Registrar en auditoría
+        registrar_auditoria(
+            'LOTE_PARTIDO',
+            f"Lote {lote_base} partido en {num_divisiones + 1} sublotes. "
+            f"Superficies: {', '.join([f'{s:.4f}' for s in superficies])} ha",
+            campesino_id
+        )
+        
+        return nuevos_ids
+        
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
+
+
+def renombrar_campesino(campesino_id: int, nuevo_nombre: str) -> bool:
+    """
+    Cambia el nombre del dueño de un lote.
+    
+    Args:
+        campesino_id: ID del campesino
+        nuevo_nombre: Nuevo nombre del dueño
+    
+    Returns:
+        True si se actualizó correctamente
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Obtener nombre anterior
+        cursor.execute("SELECT nombre, numero_lote FROM campesinos WHERE id = ?", (campesino_id,))
+        row = cursor.fetchone()
+        
+        if not row:
+            raise ValueError("Campesino no encontrado")
+        
+        nombre_anterior = row[0]
+        numero_lote = row[1]
+        
+        # Actualizar nombre
+        cursor.execute("""
+            UPDATE campesinos 
+            SET nombre = ?
+            WHERE id = ?
+        """, (nuevo_nombre, campesino_id))
+        
+        conn.commit()
+        
+        # Registrar en auditoría
+        registrar_auditoria(
+            'CAMPESINO_RENOMBRADO',
+            f"Lote {numero_lote}: '{nombre_anterior}' → '{nuevo_nombre}'",
+            campesino_id
+        )
+        
+        return True
+        
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
+
