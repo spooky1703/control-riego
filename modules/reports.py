@@ -1,3 +1,4 @@
+#models/reports.py
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib.units import mm, cm
 from reportlab.lib import colors
@@ -11,6 +12,15 @@ import time
 import sys
 import subprocess
 import platform
+
+if platform.system() == "Windows":
+    try:
+        import win32print
+        import win32api
+    except ImportError:
+        win32print = None
+        win32api = None
+        print("Advertencia: pywin32 no está instalado. La impresión en Windows puede fallar. Instale con: pip install pywin32")
 
 from typing import Dict, List
 
@@ -136,46 +146,72 @@ def generar_recibo_pdf_temporal(recibo_id: int, es_reimpresion: bool = False) ->
 
 # ==================== IMPRESIÓN (TEMPORALES) ====================
 
-def imprimir_recibo_y_limpiar(ruta_pdf: str, impresora: str = None):
+def imprimir_recibo_y_limpiar(pdf_path: str):
     """
-    Imprime el recibo y LO ELIMINA automáticamente después.
-    Solo aplica a recibos TEMPORALES.
+    Intenta imprimir un archivo PDF en Windows o macOS y luego lo elimina.
     """
-    if not os.path.exists(ruta_pdf):
-        raise FileNotFoundError(f"Archivo no encontrado: {ruta_pdf}")
-
     sistema = platform.system()
+    print(f"Intentando imprimir en {sistema} desde: {pdf_path}")
 
+    if not os.path.exists(pdf_path):
+        print(f"Error: El archivo PDF no existe: {pdf_path}")
+        return
+
+    impreso = False
+
+    if sistema == "Windows":
+        if win32print and win32api:
+            try:
+                # Usar win32api para imprimir
+                win32api.ShellExecute(0, "print", pdf_path, None, ".", 0)
+                print(f"Comando de impresión enviado para win32: {pdf_path}")
+                impreso = True
+            except Exception as e:
+                 print(f"Error con win32api.ShellExecute: {e}")
+        else:
+             print("pywin32 no disponible. Intentando alternativas...")
+
+        if not impreso:
+            # Alternativa menos confiable: os.startfile
+            try:
+                os.startfile(pdf_path, "print") # Esta acción puede no ser silenciosa
+                print(f"Comando de impresión enviado para os.startfile: {pdf_path}")
+                impreso = True
+            except Exception as e:
+                 print(f"Error con os.startfile: {e}")
+
+    elif sistema == "Darwin": # macOS
+        try:
+            # Usar 'lp' para imprimir en macOS (requiere CUPS instalado, que generalmente lo está)
+            subprocess.run(["lp", pdf_path], check=True)
+            print(f"PDF impreso en macOS usando lp: {pdf_path}")
+            impreso = True
+        except subprocess.CalledProcessError as e:
+            print(f"Error al imprimir con 'lp' en macOS: {e}")
+        except FileNotFoundError:
+            print("Comando 'lp' no encontrado en macOS. Verifique la instalación de CUPS o la ruta.")
+
+    else: # Linux u Otro
+        try:
+            # Usar 'lp' para imprimir en Linux (requiere CUPS instalado)
+            subprocess.run(["lp", pdf_path], check=True)
+            print(f"PDF impreso en Linux usando lp: {pdf_path}")
+            impreso = True
+        except subprocess.CalledProcessError as e:
+            print(f"Error al imprimir con 'lp' en Linux: {e}")
+        except FileNotFoundError:
+            print("Comando 'lp' no encontrado. Verifique la instalación de CUPS o la ruta.")
+
+    # Esperar un momento para que el comando de impresión se procese
+    import time
+    time.sleep(1) # Ajusta si es necesario
+
+    # Eliminar el archivo temporal después del intento de impresión
     try:
-        if sistema == 'Windows':
-            _imprimir_pdf_windows(ruta_pdf, impresora)
-        elif sistema == 'Darwin':  # macOS
-            cmd = ['lp', ruta_pdf] if not impresora else ['lp', '-d', impresora, ruta_pdf]
-            subprocess.run(cmd, check=True)
-        else:  # Linux
-            cmd = ['lp', ruta_pdf] if not impresora else ['lp', '-d', impresora, ruta_pdf]
-            subprocess.run(cmd, check=True)
-
-        # IMPORTANTE: dar tiempo al spooler antes de eliminar
-        time.sleep(2)
-
-        # Eliminar el archivo temporal
-        try:
-            os.remove(ruta_pdf)
-            print(f"✓ Archivo de recibo temporal eliminado: {ruta_pdf}")
-        except Exception as e:
-            print(f"⚠ No se pudo eliminar el archivo temporal (puede estar en uso): {e}")
-
-        return True
-
-    except Exception as e:
-        print(f"Error al imprimir: {e}")
-        # Intentar eliminar el archivo incluso si hay error
-        try:
-            os.remove(ruta_pdf)
-        except Exception:
-            pass
-        return False
+        os.remove(pdf_path)
+        print(f"Archivo temporal eliminado: {pdf_path}")
+    except OSError as e:
+        print(f"Error al eliminar archivo temporal {pdf_path}: {e}")
 
 # ==================== DIBUJO DE RECIBO ====================
 

@@ -506,6 +506,34 @@ def eliminar_recibo(recibo_id: int, motivo: str = ""):
     )
     conn.commit()
     conn.close()
+
+def eliminar_recibo_db(recibo_id: int, motivo: str = ""):
+    """
+    Elimina un recibo de la base de datos (marcándolo como eliminado).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Obtener datos previos para auditoría
+    cursor.execute("SELECT * FROM recibos WHERE id = ?", (recibo_id,))
+    recibo_previo = cursor.fetchone()
+    if not recibo_previo:
+        conn.close()
+        raise ValueError("Recibo no encontrado para eliminar")
+
+    # Marcar como eliminado en lugar de borrar físicamente
+    cursor.execute("UPDATE recibos SET eliminado = 1, motivo_eliminacion = ? WHERE id = ?", (motivo, recibo_id))
+
+    # Registrar en auditoría
+    detalles_auditoria = json.dumps({
+        "motivo_eliminacion": motivo,
+        "datos_previos": dict(recibo_previo) # Convertir a dict para JSON
+    })
+    registrar_auditoria('ELIMINAR_RECIBO', f"Recibo eliminado: Folio {recibo_previo['folio']}", detalles_auditoria)
+
+    conn.commit()
+    conn.close()
+
 def obtener_recibos_campesino(campesino_id: int) -> List[Dict]:
     """Obtiene todos los recibos de un campesino"""
     conn = get_connection()

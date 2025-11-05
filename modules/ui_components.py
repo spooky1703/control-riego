@@ -1,3 +1,4 @@
+#models/ui_components.py
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, scrolledtext
 from datetime import datetime
@@ -1118,40 +1119,49 @@ class VentanaDetalleDia:
         self.label_cantidad.config(text=f"Recibos emitidos: {len(recibos)}")
     
     def eliminar_recibo(self):
-        """Elimina el recibo seleccionado"""
+        """Elimina el recibo seleccionado (marcándolo como eliminado)"""
         selection = self.tree.selection()
         if not selection:
             messagebox.showwarning("Advertencia", "Debe seleccionar un recibo")
             return
-        
+
         item = self.tree.item(selection[0])
-        recibo_id = int(item['tags'][0])
-        folio = item['values'][0]
-        monto = item['values'][6]
-        
-        # Primera confirmación
-        if not messagebox.askyesno("Confirmar Eliminación",
-                                    f"¿Eliminar recibo #{folio}?\nSe restará {monto} del total del día"):
+        recibo_id = int(item['tags'][0]) # Asumiendo que el ID está en tags
+
+        # Obtener datos del recibo antes de eliminar (opcional, para confirmación)
+        from modules.models import obtener_recibo_por_id
+        recibo = obtener_recibo_por_id(recibo_id)
+        if not recibo or recibo.get('eliminado'):
+             messagebox.showwarning("Error", "El recibo no existe o ya está eliminado.")
+             return
+
+        # Solicitar motivo de eliminación
+        motivo = simpledialog.askstring("Motivo de Eliminación", "Ingrese el motivo para eliminar el recibo:")
+        if motivo is None: # El usuario canceló
             return
-        
-        # Segunda confirmación
-        if not messagebox.askyesno("Segunda Confirmación",
-                                    "Esta acción se registrará en auditoría.\n¿Está seguro de continuar?"):
+        if not motivo.strip():
+            messagebox.showwarning("Advertencia", "Debe ingresar un motivo para eliminar el recibo.")
             return
-        
+
         try:
-            monto_restado = eliminar_recibo_dia(recibo_id, "Eliminado desde detalle del día")
-            messagebox.showinfo("Éxito",
-                                f"Recibo eliminado exitosamente\nMonto restado: ${monto_restado:.2f}")
-            
-            # Actualizar
-            self.cargar_recibos()
-            self.ventana_principal.actualizar_total_dia()
+            # Obtener el monto antes de eliminar para actualizar el total
+            monto_anterior = recibo['costo']
+
+            # Eliminar (marcar como eliminado) usando la función corregida
+            eliminar_recibo_db(recibo_id, motivo)
+
+            messagebox.showinfo("Éxito", f"Recibo eliminado exitosamente\nFolio: {recibo['folio']}\nMotivo: {motivo}\nMonto restado: ${monto_anterior:.2f}")
+
+            # Actualizar la interfaz
+            self.cargar_recibos() # Recarga la tabla de recibos
+            if self.ventana_principal: # Si tiene referencia a la ventana principal
+                self.ventana_principal.actualizar_total_dia() # Actualiza el total del día
+
         except ValueError as e:
-            messagebox.showerror("Error", str(e))
+            messagebox.showerror("Error de Validación", str(e))
         except Exception as e:
             messagebox.showerror("Error", f"Error al eliminar recibo:\n{str(e)}")
-    
+
     def reimprimir_recibo(self):
         """Reimprime el recibo seleccionado - RECIBOS TEMPORALES"""
         selection = self.tree.selection()
