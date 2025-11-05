@@ -423,7 +423,7 @@ class VentanaVenta:
     def __init__(self, parent, campesino, tipo, ventana_principal):
         self.ventana = tk.Toplevel(parent)
         self.ventana.title("Venta de Riego")
-        self.ventana.geometry("600x700")
+        self.ventana.geometry("500x600")
         self.ventana.transient(parent)
         self.ventana.grab_set()
         
