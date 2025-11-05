@@ -11,7 +11,7 @@ from reportlab.platypus import Table, TableStyle
 from datetime import datetime
 
 import os
-
+import time
 import sys
 
 import subprocess
@@ -66,6 +66,83 @@ def generar_recibo_pdf(recibo_id: int, es_reimpresion: bool = False) -> str:
     c.save()
 
     return filepath
+
+def generar_recibo_pdf_temporal(recibo_id: int, es_reimpresion: bool = False) -> str:
+    """
+    Genera el PDF de un recibo TEMPORAL que será eliminado después de imprimir.
+    No lo guarda permanentemente en database/recibos/
+    """
+    recibo = obtener_recibo_por_id(recibo_id)
+    if not recibo:
+        raise ValueError("Recibo no encontrado")
+    
+    nombre_oficina = obtener_configuracion('nombre_oficina') or 'ASOCIACIÓN DE RIEGO'
+    ubicacion = obtener_configuracion('ubicacion') or 'Tezontepec de Aldama, Hgo.'
+    
+    # Crear carpeta temporal en /tmp (Mac/Linux) o %TEMP% (Windows)
+    if platform.system() == "Windows":
+        temp_dir = os.path.join(os.environ['TEMP'], 'recibos_temp')
+    else:
+        temp_dir = os.path.join('/tmp', 'recibos_temp')
+    
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    sufijo = '_REIMPRESION' if es_reimpresion else ''
+    filename = f"recibo_{recibo['folio']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{sufijo}.pdf"
+    filepath = os.path.join(temp_dir, filename)
+    
+    c = canvas.Canvas(filepath, pagesize=(RECIBO_ANCHO, RECIBO_ALTO))
+    _dibujar_recibo_principal(c, recibo, nombre_oficina, ubicacion, es_reimpresion)
+    c.save()
+    
+    return filepath
+
+
+def imprimir_recibo_y_limpiar(ruta_pdf: str, impresora: str = None):
+    """
+    Imprime el recibo y LO ELIMINA automáticamente después.
+    Solo funciona para recibos TEMPORALES (no para reportes).
+    """
+    if not os.path.exists(ruta_pdf):
+        raise FileNotFoundError(f"Archivo no encontrado: {ruta_pdf}")
+    
+    sistema = platform.system()
+    
+    try:
+        # Enviar a imprimir
+        if sistema == 'Windows':
+            os.startfile(ruta_pdf, 'print')
+        elif sistema == 'Darwin':  # macOS
+            if impresora:
+                subprocess.run(['lp', '-d', impresora, ruta_pdf], check=True)
+            else:
+                subprocess.run(['lp', ruta_pdf], check=True)
+        elif sistema == 'Linux':
+            if impresora:
+                subprocess.run(['lp', '-d', impresora, ruta_pdf], check=True)
+            else:
+                subprocess.run(['lp', ruta_pdf], check=True)
+        
+        # IMPORTANTE: Esperar un poco a que el sistema capture el archivo
+        time.sleep(2)
+        
+        # Eliminar el archivo temporal
+        try:
+            os.remove(ruta_pdf)
+            print(f"✓ Archivo de recibo temporal eliminado: {ruta_pdf}")
+        except Exception as e:
+            print(f"⚠ No se pudo eliminar el archivo temporal (puede estar en uso): {e}")
+        
+        return True
+    
+    except Exception as e:
+        print(f"Error al imprimir: {e}")
+        # Intentar eliminar el archivo incluso si hay error
+        try:
+            os.remove(ruta_pdf)
+        except:
+            pass
+        return False
 
 def _dibujar_recibo_principal(c, recibo: Dict, nombre_oficina: str, ubicacion: str, es_reimpresion: bool):
 

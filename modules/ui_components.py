@@ -3,8 +3,9 @@ from tkinter import ttk, messagebox, filedialog, scrolledtext
 from datetime import datetime
 from typing import Optional, Dict, List
 import os
+import time
 
-# Importaciones corregidas
+# Importaciones de módulos propios
 from modules.models import (
     buscar_campesino, obtener_campesino_por_id, crear_campesino,
     actualizar_campesino, eliminar_campesino, obtener_todos_campesinos,
@@ -12,13 +13,10 @@ from modules.models import (
     obtener_recibos_dia, obtener_configuracion, actualizar_configuracion,
     obtener_toda_configuracion, obtener_auditoria, obtener_recibos_campesino,
     crear_siembra as crear_siembra_db, actualizar_siembra as actualizar_siembra_db,
-    eliminar_siembra,
-    obtener_siembra_por_id,
+    eliminar_siembra, obtener_siembra_por_id,
     crear_recibo as crear_recibo_db, actualizar_recibo as actualizar_recibo_db,
-    eliminar_recibo as eliminar_recibo_db,
-    obtener_recibo_por_id,
+    eliminar_recibo as eliminar_recibo_db, obtener_recibo_por_id,
     obtener_todos_los_recibos, obtener_todas_las_siembras, incrementar_riegos
-
 )
 
 from modules.logic import (
@@ -26,13 +24,11 @@ from modules.logic import (
     calcular_total_dia, eliminar_recibo_dia, cerrar_dia,
     reiniciar_folios_y_ciclo, crear_backup, cambiar_cultivo_siembra,
     actualizar_folio_actual, incrementar_folio
-
 )
 
 from modules.reports import (
-    generar_recibo_pdf, generar_reporte_diario, imprimir_recibo,
-    abrir_pdf, exportar_a_excel, obtener_impresoras_disponibles
-
+    generar_recibo_pdf_temporal, imprimir_recibo_y_limpiar,
+    generar_reporte_diario, abrir_pdf, exportar_a_excel, obtener_impresoras_disponibles
 )
 
 # Lista de cultivos comunes
@@ -308,7 +304,6 @@ class VentanaPrincipal:
                 mensaje += f"Recibos: {resultado['cantidad_recibos']}"
                 messagebox.showinfo("Día Cerrado", mensaje)
                 
-                # Preguntar si desea reiniciar el contador
                 if messagebox.askyesno("Reiniciar Contador",
                                       "¿Desea reiniciar el contador de venta a $0.00?"):
                     self.total_dia.set(0.0)
@@ -328,10 +323,10 @@ class VentanaPrincipal:
             except Exception as e:
                 messagebox.showerror("Error", f"Error al crear backup:\n{str(e)}")
 
-# ==================== VENTANA DE VENTA (CON EDITAR SIEMBRA/RIEGO INTEGRADO) ====================
+# ==================== VENTANA DE VENTA ====================
 
 class VentanaVenta:
-    """Ventana para vender riegos o iniciar nueva siembra - CON OPCIÓN PARA EDITAR SIEMBRA/RIEGO"""
+    """Ventana para vender riegos o iniciar nueva siembra"""
     
     def __init__(self, parent, campesino, tipo, ventana_principal):
         self.ventana = tk.Toplevel(parent)
@@ -378,7 +373,7 @@ Superficie: {self.campesino['superficie']} hectáreas
                      font=('Helvetica', 10, 'bold'),
                      foreground='orange').pack(anchor=tk.W)
         
-        # ===== NUEVO: SECCIÓN DE EDITAR SIEMBRA/RIEGO =====
+        # ===== SECCIÓN DE EDITAR SIEMBRA/RIEGO =====
         frame_editar = ttk.LabelFrame(frame_principal, text="✏️ Editar Siembra/Riego", padding="10")
         frame_editar.pack(fill=tk.X, padx=0, pady=10)
         
@@ -389,7 +384,7 @@ Superficie: {self.campesino['superficie']} hectáreas
         ttk.Label(frame_editar, text="Haz clic para editar/agregar siembras y riegos",
                  font=('Helvetica', 9),
                  foreground='gray').pack()
-        # ===== FIN DE NUEVA SECCIÓN =====
+        # ===== FIN DE SECCIÓN =====
         
         # Frame de opciones
         frame_opciones = ttk.LabelFrame(frame_principal, text="¿Qué desea hacer?", padding="15")
@@ -477,7 +472,7 @@ Superficie: {self.campesino['superficie']} hectáreas
             self.combo_cultivo.config(state='readonly')
 
     def generar_recibo(self):
-        """Genera el recibo y lo imprime"""
+        """Genera el recibo y lo imprime - RECIBOS TEMPORALES"""
         # Validar cultivo
         if not self.combo_cultivo.get():
             messagebox.showwarning("Advertencia", "Debe seleccionar un cultivo")
@@ -495,8 +490,8 @@ Superficie: {self.campesino['superficie']} hectáreas
                 resultado = vender_riego(self.campesino['id'])
                 tipo_texto = "Riego adicional"
             
-            # Generar PDF
-            pdf_path = generar_recibo_pdf(resultado['recibo_id'])
+            # Generar recibo temporal
+            pdf_path = generar_recibo_pdf_temporal(resultado['recibo_id'])
             
             # Abrir vista previa
             abrir_pdf(pdf_path)
@@ -504,7 +499,13 @@ Superficie: {self.campesino['superficie']} hectáreas
             # Preguntar si desea imprimir
             if messagebox.askyesno("Imprimir Recibo",
                                   f"Recibo generado exitosamente\nFolio: {resultado['folio']}\nCosto: ${resultado['costo']:.2f}\n¿Desea imprimir?"):
-                imprimir_recibo(pdf_path)
+                imprimir_recibo_y_limpiar(pdf_path)
+            else:
+                # Eliminar si no va a imprimir
+                try:
+                    os.remove(pdf_path)
+                except:
+                    pass
             
             messagebox.showinfo("Éxito",
                               f"{tipo_texto} registrado exitosamente\nFolio: {resultado['folio']}\nCosto: ${resultado['costo']:.2f}")
@@ -590,7 +591,7 @@ class VentanaEditarSiembraRiego:
             self.entry_fecha_inicio.delete(0, tk.END)
             self.entry_fecha_inicio.insert(0, self.siembra_activa['fecha_inicio'])
         
-        # ===== NUEVO: NÚMERO DE RIEGOS EDITABLE =====
+        # Número de riegos EDITABLE
         ttk.Label(frame_form, text="Número de Riegos:").grid(row=3, column=0, sticky="w", pady=5)
         self.entry_riegos = ttk.Entry(frame_form, width=42)
         self.entry_riegos.grid(row=3, column=1, sticky="ew", pady=5, padx=10)
@@ -674,7 +675,6 @@ class VentanaEditarSiembraRiego:
         try:
             if self.siembra_activa:
                 # Actualizar siembra existente
-                # Construir diccionario con SOLO los campos que cambiaron
                 datos_a_actualizar = {}
                 
                 if cultivo != self.siembra_activa.get('cultivo'):
@@ -696,7 +696,7 @@ class VentanaEditarSiembraRiego:
                 else:
                     messagebox.showinfo("Información", "No hay cambios para guardar")
             else:
-                # Crear nueva siembra - CORREGIDO: solo 3 parámetros
+                # Crear nueva siembra
                 self.siembra_id = crear_siembra_db(self.campesino_id, cultivo, ciclo)
                 
                 # Actualizar la fecha de inicio y número de riegos si es necesario
@@ -721,73 +721,6 @@ class VentanaEditarSiembraRiego:
             import traceback
             print(f"Error detallado: {traceback.format_exc()}")
             messagebox.showerror("Error", f"Error al guardar: {str(e)}")
-            """Guarda los cambios en la siembra"""
-            cultivo = self.combo_cultivo.get()
-            ciclo = self.entry_ciclo.get()
-            fecha_inicio = self.entry_fecha_inicio.get()
-            numero_riegos_str = self.entry_riegos.get()
-            
-            if not cultivo:
-                messagebox.showerror("Error", "Debe seleccionar un cultivo")
-                return
-            
-            if not ciclo:
-                messagebox.showerror("Error", "El ciclo es obligatorio")
-                return
-            
-            if not numero_riegos_str or numero_riegos_str == "":
-                messagebox.showerror("Error", "Debe ingresar el número de riegos")
-                return
-            
-            try:
-                numero_riegos = int(numero_riegos_str)
-                if numero_riegos < 0:
-                    messagebox.showerror("Error", "El número de riegos no puede ser negativo")
-                    return
-            except ValueError:
-                messagebox.showerror("Error", "El número de riegos debe ser un número entero")
-                return
-            
-            try:
-                datetime.strptime(fecha_inicio, '%Y-%m-%d')
-            except ValueError:
-                messagebox.showerror("Error", "Fecha inválida (formato YYYY-MM-DD)")
-                return
-            
-            try:
-                if self.siembra_activa:
-                    # Actualizar siembra existente
-                    actualizar_siembra_db(self.siembra_id, {
-                        'cultivo': cultivo,
-                        'ciclo': ciclo,
-                        'fecha_inicio': fecha_inicio,
-                        'numero_riegos': numero_riegos
-                    })
-                    messagebox.showinfo("Éxito", "Siembra actualizada correctamente")
-                else:
-                    # Crear nueva siembra - CORREGIDO: solo 3 parámetros
-                    self.siembra_id = crear_siembra_db(self.campesino_id, cultivo, ciclo)
-                    
-                    # Actualizar la fecha de inicio y número de riegos si es necesario
-                    datos_actualizar = {}
-                    
-                    if fecha_inicio != datetime.now().strftime('%Y-%m-%d'):
-                        datos_actualizar['fecha_inicio'] = fecha_inicio
-                    
-                    if numero_riegos > 0:
-                        datos_actualizar['numero_riegos'] = numero_riegos
-                    
-                    if datos_actualizar:
-                        actualizar_siembra_db(self.siembra_id, datos_actualizar)
-                    
-                    messagebox.showinfo("Éxito", "Siembra creada correctamente")
-                
-                self.ventana.destroy()
-                if self.ventana_principal:
-                    self.ventana_principal.cargar_todos_campesinos()
-            
-            except Exception as e:
-                messagebox.showerror("Error", f"Error al guardar: {str(e)}")
 
     def agregar_riego(self):
         """Abre ventana para agregar un riego manualmente"""
@@ -800,7 +733,7 @@ class VentanaAgregarRiego:
     
     def __init__(self, parent, campesino_id: int, siembra_id: int, campesino_nombre: str):
         self.campesino_id = campesino_id
-        self.siembra_id = siembra_id  # ← AHORA ESTÁ DEFINIDO CORRECTAMENTE
+        self.siembra_id = siembra_id
         self.campesino_nombre = campesino_nombre
         
         self.ventana = tk.Toplevel(parent)
@@ -826,7 +759,6 @@ class VentanaAgregarRiego:
         frame_form.pack(fill=tk.BOTH, expand=True, padx=0, pady=10)
         
         # Obtener siembra para calcular próximo número
-        # CORRECCIÓN: Usar self.siembra_id que YA ESTÁ DEFINIDO
         siembra = obtener_siembra_por_id(self.siembra_id)
         proximo_numero = (siembra['numero_riegos'] if siembra else 0) + 1
         
@@ -906,6 +838,7 @@ class VentanaAgregarRiego:
             messagebox.showerror("Error de validación", "Fecha u hora inválida (formato YYYY-MM-DD y HH:MM:SS)")
         except Exception as e:
             messagebox.showerror("Error", f"Error al guardar riego: {str(e)}")
+
 # ==================== VENTANA REINICIAR CICLO ====================
 
 class VentanaReiniciarCiclo:
@@ -1129,7 +1062,7 @@ class VentanaDetalleDia:
             messagebox.showerror("Error", f"Error al eliminar recibo:\n{str(e)}")
 
     def reimprimir_recibo(self):
-        """Reimprime el recibo seleccionado"""
+        """Reimprime el recibo seleccionado - RECIBOS TEMPORALES"""
         selection = self.tree.selection()
         
         if not selection:
@@ -1140,15 +1073,17 @@ class VentanaDetalleDia:
         recibo_id = int(item['tags'][0])
         
         try:
-            # Generar PDF con marca de reimpresión
-            pdf_path = generar_recibo_pdf(recibo_id, es_reimpresion=True)
+            pdf_path = generar_recibo_pdf_temporal(recibo_id, es_reimpresion=True)
             
-            # Abrir vista previa
             abrir_pdf(pdf_path)
             
-            # Preguntar si desea imprimir
             if messagebox.askyesno("Imprimir", "¿Desea imprimir la reimpresión?"):
-                imprimir_recibo(pdf_path)
+                imprimir_recibo_y_limpiar(pdf_path)
+            else:
+                try:
+                    os.remove(pdf_path)
+                except:
+                    pass
         
         except Exception as e:
             messagebox.showerror("Error", f"Error al reimprimir:\n{str(e)}")
@@ -1202,7 +1137,7 @@ class FormularioCampesino:
         
         if self.campesino:
             self.entry_lote.insert(0, self.campesino['numero_lote'])
-            self.entry_lote.config(state='disabled')  # No editable
+            self.entry_lote.config(state='disabled')
         
         # Nombre completo
         ttk.Label(frame_form, text="Nombre Completo:", font=('Helvetica', 10)).grid(row=1, column=0, sticky=tk.W, pady=5)
@@ -1239,7 +1174,6 @@ class FormularioCampesino:
         if self.campesino:
             self.entry_superficie.insert(0, str(self.campesino['superficie']))
             
-            # Verificar si tiene siembra activa
             siembra = obtener_siembra_activa(self.campesino_id)
             if siembra:
                 self.entry_superficie.config(state='disabled')
@@ -1272,7 +1206,6 @@ class FormularioCampesino:
     def guardar(self):
         """Guarda los datos del campesino"""
         
-        # Recopilar datos
         datos = {
             'numero_lote': self.entry_lote.get().strip(),
             'nombre': self.entry_nombre.get().strip(),
@@ -1297,19 +1230,14 @@ class FormularioCampesino:
         
         try:
             if self.campesino_id:
-                # Actualizar
                 actualizar_campesino(self.campesino_id, datos)
                 messagebox.showinfo("Éxito", "Campesino actualizado exitosamente")
             else:
-                # Crear nuevo
                 crear_campesino(datos)
                 messagebox.showinfo("Éxito",
                                   f"Campesino registrado exitosamente\nLote: {datos['numero_lote']}")
             
-            # Actualizar ventana principal
             self.ventana_principal.cargar_todos_campesinos()
-            
-            # Cerrar ventana
             self.ventana.destroy()
         
         except ValueError as e:
@@ -1450,7 +1378,7 @@ Superficie: {self.campesino['superficie']} ha
             ), tags=(str(r['id']),))
 
     def reimprimir_recibo(self):
-        """Reimprime el recibo seleccionado"""
+        """Reimprime el recibo seleccionado - RECIBOS TEMPORALES"""
         selection = self.tree_recibos.selection()
         
         if not selection:
@@ -1461,11 +1389,17 @@ Superficie: {self.campesino['superficie']} ha
         recibo_id = int(item['tags'][0])
         
         try:
-            pdf_path = generar_recibo_pdf(recibo_id, es_reimpresion=True)
+            pdf_path = generar_recibo_pdf_temporal(recibo_id, es_reimpresion=True)
+            
             abrir_pdf(pdf_path)
             
             if messagebox.askyesno("Imprimir", "¿Desea imprimir?"):
-                imprimir_recibo(pdf_path)
+                imprimir_recibo_y_limpiar(pdf_path)
+            else:
+                try:
+                    os.remove(pdf_path)
+                except:
+                    pass
         
         except Exception as e:
             messagebox.showerror("Error", f"Error al reimprimir:\n{str(e)}")
