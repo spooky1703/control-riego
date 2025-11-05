@@ -675,3 +675,130 @@ def cargar_campesinos_desde_csv(ruta_csv: str):
     conn.close()
     print(f"Total de campesinos cargados: {total_cargados}")
     return total_cargados
+
+def obtener_estadisticas_generales() -> Dict:
+    """
+    Obtiene estadísticas generales de todos los campesinos y siembras.
+    Retorna:
+    - total_campesinos
+    - total_hectareas
+    - hectareas_sembradas
+    - porcentaje_sembrado
+    - siembras_por_cultivo (dict)
+    - hectareas_por_cultivo (dict)
+    - campesinos_sin_siembra
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Total de campesinos
+    cursor.execute("SELECT COUNT(*) FROM campesinos")
+    total_campesinos = cursor.fetchone()[0]
+    
+    # Total de hectáreas
+    cursor.execute("SELECT SUM(superficie) FROM campesinos")
+    total_hectareas = cursor.fetchone()[0] or 0
+    
+    # Hectáreas sembradas (con siembra activa)
+    cursor.execute("""
+        SELECT SUM(c.superficie) 
+        FROM campesinos c
+        INNER JOIN siembras s ON c.id = s.campesino_id
+        WHERE s.activa = 1
+    """)
+    hectareas_sembradas = cursor.fetchone()[0] or 0
+    
+    # Porcentaje sembrado
+    porcentaje_sembrado = (hectareas_sembradas / total_hectareas * 100) if total_hectareas > 0 else 0
+    
+    # Siembras por cultivo (cantidad)
+    cursor.execute("""
+        SELECT cultivo, COUNT(*) as cantidad
+        FROM siembras
+        WHERE activa = 1
+        GROUP BY cultivo
+        ORDER BY cantidad DESC
+    """)
+    siembras_por_cultivo = {row[0]: row[1] for row in cursor.fetchall()}
+    
+    # Hectáreas por cultivo
+    cursor.execute("""
+        SELECT s.cultivo, SUM(c.superficie) as hectareas
+        FROM siembras s
+        INNER JOIN campesinos c ON s.campesino_id = c.id
+        WHERE s.activa = 1
+        GROUP BY s.cultivo
+        ORDER BY hectareas DESC
+    """)
+    hectareas_por_cultivo = {row[0]: row[1] for row in cursor.fetchall()}
+    
+    # Campesinos sin siembra
+    cursor.execute("""
+        SELECT COUNT(*) 
+        FROM campesinos c
+        LEFT JOIN siembras s ON c.id = s.campesino_id AND s.activa = 1
+        WHERE s.id IS NULL
+    """)
+    campesinos_sin_siembra = cursor.fetchone()[0]
+    
+    conn.close()
+    
+    return {
+        'total_campesinos': total_campesinos,
+        'total_hectareas': round(total_hectareas, 2),
+        'hectareas_sembradas': round(hectareas_sembradas, 2),
+        'hectareas_sin_sembrar': round(total_hectareas - hectareas_sembradas, 2),
+        'porcentaje_sembrado': round(porcentaje_sembrado, 2),
+        'siembras_por_cultivo': siembras_por_cultivo,
+        'hectareas_por_cultivo': hectareas_por_cultivo,
+        'campesinos_sin_siembra': campesinos_sin_siembra
+    }
+
+
+def obtener_estadisticas_por_cultivo(cultivo: str) -> Dict:
+    """Obtiene estadísticas de un cultivo específico"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Campesinos con este cultivo
+    cursor.execute("""
+        SELECT COUNT(DISTINCT s.campesino_id)
+        FROM siembras s
+        WHERE s.cultivo = ? AND s.activa = 1
+    """, (cultivo,))
+    total_campesinos = cursor.fetchone()[0]
+    
+    # Hectáreas totales
+    cursor.execute("""
+        SELECT SUM(c.superficie)
+        FROM siembras s
+        INNER JOIN campesinos c ON s.campesino_id = c.id
+        WHERE s.cultivo = ? AND s.activa = 1
+    """, (cultivo,))
+    total_hectareas = cursor.fetchone()[0] or 0
+    
+    # Riegos promedio
+    cursor.execute("""
+        SELECT AVG(s.numero_riegos)
+        FROM siembras s
+        WHERE s.cultivo = ? AND s.activa = 1
+    """, (cultivo,))
+    riegos_promedio = cursor.fetchone()[0] or 0
+    
+    # Total de riegos vendidos
+    cursor.execute("""
+        SELECT SUM(s.numero_riegos)
+        FROM siembras s
+        WHERE s.cultivo = ? AND s.activa = 1
+    """, (cultivo,))
+    total_riegos = cursor.fetchone()[0] or 0
+    
+    conn.close()
+    
+    return {
+        'cultivo': cultivo,
+        'total_campesinos': total_campesinos,
+        'total_hectareas': round(total_hectareas, 2),
+        'riegos_promedio': round(riegos_promedio, 1),
+        'total_riegos': total_riegos
+    }

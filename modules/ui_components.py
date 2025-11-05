@@ -17,8 +17,10 @@ from modules.models import (
     eliminar_siembra, obtener_siembra_por_id,
     crear_recibo as crear_recibo_db, actualizar_recibo as actualizar_recibo_db,
     eliminar_recibo as eliminar_recibo_db, obtener_recibo_por_id,
-    obtener_todos_los_recibos, obtener_todas_las_siembras, incrementar_riegos
+    obtener_todos_los_recibos, obtener_todas_las_siembras, incrementar_riegos,
+    obtener_estadisticas_generales, obtener_estadisticas_por_cultivo
 )
+
 
 from modules.logic import (
     calcular_costo, validar_campesino, nueva_siembra, vender_riego,
@@ -262,6 +264,8 @@ class VentanaPrincipal:
                    command=self.abrir_configuracion, width=12).pack(side=tk.LEFT, padx=2, pady=2)
         ttk.Button(frame_botones_inf, text="💾 Backup",
                    command=self.crear_backup_manual, width=12).pack(side=tk.LEFT, padx=2, pady=2)
+        ttk.Button(frame_botones_inf, text="📊 Estadísticas",
+          command=self.abrir_estadisticas, width=12).pack(side=tk.LEFT, padx=2, pady=2)
         ttk.Button(frame_botones_inf, text="🔧 Admin",
                    command=self.abrir_administrar_datos, width=12).pack(side=tk.LEFT, padx=2, pady=2)
         
@@ -287,6 +291,11 @@ class VentanaPrincipal:
                 cultivo,
                 riegos
             ), tags=(str(c['id']),))
+    
+    def abrir_estadisticas(self):
+        """Abre la ventana de estadísticas"""
+        VentanaEstadisticas(self.root)
+
     
     def on_buscar(self, event=None):
         """Busca campesinos"""
@@ -1732,3 +1741,209 @@ class VentanaAdministrarDatos:
             self.entry_nuevo_nombre.delete(0, tk.END)
         except Exception as e:
             messagebox.showerror("Error", f"Error al actualizar nombre: {str(e)}")
+            
+            
+
+class VentanaEstadisticas:
+    """Ventana de estadísticas e insights con gráficas"""
+    
+    def __init__(self, parent):
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title("📊 Estadísticas e Insights")
+        self.ventana.geometry("1000x700")
+        self.ventana.transient(parent)
+        
+        # Obtener datos
+        self.stats = obtener_estadisticas_generales()
+        
+        # Crear scrollable
+        self.canvas, self.frame_principal = crear_ventana_scrollable(self.ventana, None)
+        
+        self.crear_widgets()
+    
+    def crear_widgets(self):
+        """Crea los widgets de la ventana"""
+        
+        frame_principal = ttk.Frame(self.frame_principal, padding="20")
+        frame_principal.pack(fill=tk.BOTH, expand=True)
+        
+        # TÍTULO
+        ttk.Label(frame_principal, text="📊 ESTADÍSTICAS E INSIGHTS",
+                 font=('Helvetica', 16, 'bold')).pack(pady=10)
+        
+        # ===== PANEL DE RESUMEN =====
+        frame_resumen = ttk.LabelFrame(frame_principal, text="📈 Resumen General", padding="15")
+        frame_resumen.pack(fill=tk.X, pady=10)
+        
+        # Grid de estadísticas principales
+        stats_grid = ttk.Frame(frame_resumen)
+        stats_grid.pack(fill=tk.X)
+        
+        self._crear_stat_card(stats_grid, 0, 0, "👥 Total Campesinos", 
+                             str(self.stats['total_campesinos']), "blue")
+        self._crear_stat_card(stats_grid, 0, 1, "🌾 Total Hectáreas", 
+                             f"{self.stats['total_hectareas']} ha", "green")
+        self._crear_stat_card(stats_grid, 0, 2, "✅ Hectáreas Sembradas", 
+                             f"{self.stats['hectareas_sembradas']} ha", "green")
+        self._crear_stat_card(stats_grid, 1, 0, "📊 Porcentaje Sembrado", 
+                             f"{self.stats['porcentaje_sembrado']}%", "orange")
+        self._crear_stat_card(stats_grid, 1, 1, "❌ Sin Sembrar", 
+                             f"{self.stats['hectareas_sin_sembrar']} ha", "red")
+        self._crear_stat_card(stats_grid, 1, 2, "⚠️ Campesinos Sin Siembra", 
+                             str(self.stats['campesinos_sin_siembra']), "red")
+        
+        # ===== FILTROS =====
+        frame_filtros = ttk.LabelFrame(frame_principal, text="🔍 Filtros", padding="10")
+        frame_filtros.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(frame_filtros, text="Filtrar por cultivo:").pack(side=tk.LEFT, padx=5)
+        
+        self.combo_filtro = ttk.Combobox(frame_filtros, 
+                                         values=['Todos'] + list(self.stats['siembras_por_cultivo'].keys()),
+                                         state='readonly', width=20)
+        self.combo_filtro.current(0)
+        self.combo_filtro.pack(side=tk.LEFT, padx=5)
+        self.combo_filtro.bind('<<ComboboxSelected>>', self.aplicar_filtro)
+        
+        ttk.Button(frame_filtros, text="🔄 Actualizar",
+                  command=self.actualizar_datos).pack(side=tk.LEFT, padx=5)
+        
+        # ===== GRÁFICAS =====
+        frame_graficas = ttk.Frame(frame_principal)
+        frame_graficas.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        # Gráfica 1: Hectáreas por cultivo
+        self.crear_grafica_barras(frame_graficas, 
+                                   self.stats['hectareas_por_cultivo'],
+                                   "Hectáreas Sembradas por Cultivo",
+                                   "Cultivo", "Hectáreas")
+        
+        # ===== DETALLES POR CULTIVO =====
+        frame_detalles = ttk.LabelFrame(frame_principal, text="📋 Detalles por Cultivo", padding="10")
+        frame_detalles.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        # Tabla de cultivos
+        self.tree = ttk.Treeview(frame_detalles, 
+                                 columns=('cultivo', 'campesinos', 'hectareas', 'porcentaje'),
+                                 show='headings', height=10)
+        
+        self.tree.heading('cultivo', text='Cultivo')
+        self.tree.heading('campesinos', text='Campesinos')
+        self.tree.heading('hectareas', text='Hectáreas')
+        self.tree.heading('porcentaje', text='% del Total')
+        
+        self.tree.column('cultivo', width=150)
+        self.tree.column('campesinos', width=100)
+        self.tree.column('hectareas', width=100)
+        self.tree.column('porcentaje', width=100)
+        
+        scrollbar = ttk.Scrollbar(frame_detalles, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscroll=scrollbar.set)
+        
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.cargar_tabla_cultivos()
+    
+    def _crear_stat_card(self, parent, row, col, titulo, valor, color):
+        """Crea una tarjeta de estadística"""
+        frame = ttk.Frame(parent, relief=tk.RIDGE, borderwidth=2)
+        frame.grid(row=row, column=col, padx=10, pady=10, sticky='nsew')
+        
+        ttk.Label(frame, text=titulo, font=('Helvetica', 9)).pack(pady=5)
+        ttk.Label(frame, text=valor, font=('Helvetica', 18, 'bold'),
+                 foreground=color).pack(pady=5)
+        
+        parent.columnconfigure(col, weight=1)
+    
+    def crear_grafica_barras(self, parent, datos, titulo, xlabel, ylabel):
+        """Crea una gráfica de barras con matplotlib"""
+        try:
+            import matplotlib
+            matplotlib.use('TkAgg')
+            from matplotlib.figure import Figure
+            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+            
+            # Crear figura
+            fig = Figure(figsize=(8, 4), dpi=100)
+            ax = fig.add_subplot(111)
+            
+            # Datos
+            cultivos = list(datos.keys())
+            valores = list(datos.values())
+            
+            # Colores
+            colores = ['#2E86AB', '#A23B72', '#F18F01', '#C73E1D', '#6A994E', 
+                      '#BC4B51', '#8B5A3C', '#5F6F52']
+            
+            # Crear gráfica de barras
+            bars = ax.bar(cultivos, valores, color=colores[:len(cultivos)])
+            
+            # Etiquetas
+            ax.set_xlabel(xlabel, fontsize=10)
+            ax.set_ylabel(ylabel, fontsize=10)
+            ax.set_title(titulo, fontsize=12, fontweight='bold')
+            
+            # Rotar etiquetas del eje X
+            ax.tick_params(axis='x', rotation=45)
+            
+            # Agregar valores encima de las barras
+            for bar in bars:
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height,
+                       f'{height:.1f}',
+                       ha='center', va='bottom', fontsize=9)
+            
+            fig.tight_layout()
+            
+            # Agregar a Tkinter
+            canvas = FigureCanvasTkAgg(fig, parent)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+            
+        except ImportError:
+            ttk.Label(parent, text="⚠️ Instala matplotlib para ver gráficas:\npip install matplotlib",
+                     foreground='red', font=('Helvetica', 11)).pack(pady=20)
+    
+    def cargar_tabla_cultivos(self):
+        """Carga la tabla de detalles por cultivo"""
+        self.tree.delete(*self.tree.get_children())
+        
+        total_hectareas = self.stats['total_hectareas']
+        
+        for cultivo, hectareas in self.stats['hectareas_por_cultivo'].items():
+            campesinos = self.stats['siembras_por_cultivo'].get(cultivo, 0)
+            porcentaje = (hectareas / total_hectareas * 100) if total_hectareas > 0 else 0
+            
+            self.tree.insert('', tk.END, values=(
+                cultivo,
+                campesinos,
+                f"{hectareas:.2f} ha",
+                f"{porcentaje:.1f}%"
+            ))
+    
+    def aplicar_filtro(self, event=None):
+        """Aplica filtro por cultivo"""
+        cultivo = self.combo_filtro.get()
+        
+        if cultivo == 'Todos':
+            messagebox.showinfo("Filtro", "Mostrando todos los cultivos")
+            return
+        
+        # Obtener estadísticas del cultivo específico
+        stats_cultivo = obtener_estadisticas_por_cultivo(cultivo)
+        
+        mensaje = f"""📊 ESTADÍSTICAS DE {cultivo.upper()}
+
+👥 Campesinos: {stats_cultivo['total_campesinos']}
+🌾 Hectáreas: {stats_cultivo['total_hectareas']} ha
+💧 Riegos promedio: {stats_cultivo['riegos_promedio']}
+📊 Total de riegos: {stats_cultivo['total_riegos']}"""
+        
+        messagebox.showinfo(f"Cultivo: {cultivo}", mensaje)
+    
+    def actualizar_datos(self):
+        """Actualiza los datos y refresca la ventana"""
+        self.stats = obtener_estadisticas_generales()
+        self.ventana.destroy()
+        VentanaEstadisticas(self.ventana.master)

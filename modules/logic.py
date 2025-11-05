@@ -181,6 +181,23 @@ def incrementar_folio() -> int:
 
     return folio_actual
 
+def decrementar_folio() -> int:
+    """
+    Decrementa el folio actual (usado cuando se elimina un recibo).
+    Retorna el nuevo valor del folio.
+    """
+    folio_actual = obtener_folio_actual()
+    
+    # No permitir que baje de 1
+    if folio_actual > 1:
+        nuevo_folio = folio_actual - 1
+        actualizar_configuracion('folio_actual', str(nuevo_folio))
+        return nuevo_folio
+    else:
+        # Si ya está en 1, mantenerlo en 1
+        return folio_actual
+
+
 def reiniciar_folios_y_ciclo(nuevo_ciclo: str) -> bool:
 
     """
@@ -434,30 +451,48 @@ def calcular_total_dia(fecha: Optional[str] = None) -> float:
     return total
 
 def eliminar_recibo_dia(recibo_id: int, motivo: str = "") -> float:
-
-    """Elimina un recibo del día y devuelve el monto que debe restarse del total"""
-
+    """
+    Elimina un recibo del día y devuelve el monto que debe restarse del total.
+    IMPORTANTE: También decrementa el folio actual para que ese número nunca haya existido.
+    """
     from modules.models import obtener_recibo_por_id, eliminar_recibo_db
-
+    
     recibo = obtener_recibo_por_id(recibo_id)
-
     if not recibo:
-
         raise ValueError("Recibo no encontrado")
-
+    
     fecha_hoy = datetime.now().strftime('%Y-%m-%d')
-
     if recibo['fecha'] != fecha_hoy:
-
         raise ValueError("Solo se pueden eliminar recibos del día actual")
-
+    
     if recibo['eliminado']:
-
         raise ValueError("El recibo ya está eliminado")
-
+    
+    # Verificar si es el último recibo creado (tiene el folio más alto)
+    folio_actual = obtener_folio_actual()
+    es_ultimo_recibo = (recibo['folio'] == folio_actual - 1)  # -1 porque ya se incrementó
+    
+    # Eliminar el recibo
     eliminar_recibo_db(recibo_id, motivo)
-
+    
+    # IMPORTANTE: Decrementar el folio para que ese número no haya existido
+    if es_ultimo_recibo:
+        nuevo_folio = decrementar_folio()
+        registrar_auditoria(
+            'FOLIO_DECREMENTADO',
+            f"Folio decrementado de {folio_actual} a {nuevo_folio} tras eliminar recibo #{recibo['folio']}. Motivo: {motivo}",
+            None
+        )
+    else:
+        # Si no es el último recibo, solo registrar la eliminación sin tocar el folio
+        registrar_auditoria(
+            'RECIBO_ELIMINADO',
+            f"Recibo #{recibo['folio']} eliminado (no se modificó folio actual porque no era el más reciente). Motivo: {motivo}",
+            None
+        )
+    
     return recibo['costo']
+
 
 def cerrar_dia() -> Dict:
 
