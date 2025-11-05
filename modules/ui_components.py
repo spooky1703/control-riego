@@ -36,6 +36,92 @@ CULTIVOS = ['MAÍZ', 'FRIJOL', 'TRIGO', 'SORGO', 'ALFALFA', 'CHILE', 'TOMATE', '
 
 # ==================== VENTANA PRINCIPAL ====================
 
+def crear_ventana_scrollable(parent_ventana, contenido_frame):
+    """
+    Agrega una scrollbar vertical a cualquier ventana/pop-up.
+    Funciona con rueda de ratón y trackpad en Windows, Mac y Linux.
+    
+    Uso:
+      1. Crear la ventana: ventana = tk.Toplevel(parent)
+      2. Llamar a esta función: canvas, scrollable_frame = crear_ventana_scrollable(ventana, None)
+      3. Colocar widgets en scrollable_frame
+    """
+    import platform
+    
+    # Crear frame para canvas y scrollbar
+    frame_canvas = ttk.Frame(parent_ventana)
+    frame_canvas.pack(fill=tk.BOTH, expand=True)
+    
+    # Crear canvas
+    canvas = tk.Canvas(frame_canvas, bg='white', highlightthickness=0)
+    scrollbar = ttk.Scrollbar(frame_canvas, orient=tk.VERTICAL, command=canvas.yview)
+    scrollable_frame = ttk.Frame(canvas)
+    
+    # Actualizar scroll region cuando cambie el tamaño
+    def _configure_scroll_region(event=None):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+    
+    scrollable_frame.bind("<Configure>", _configure_scroll_region)
+    
+    # Crear ventana en canvas
+    canvas_window = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
+    
+    # Ajustar ancho del scrollable_frame al canvas
+    def _configure_canvas_width(event):
+        canvas.itemconfig(canvas_window, width=event.width)
+    
+    canvas.bind('<Configure>', _configure_canvas_width)
+    
+    # ===== SOPORTE RUEDA DE RATÓN Y TRACKPAD =====
+    def _on_scroll_windows(event):
+        """Maneja scroll con rueda de ratón en Windows"""
+        canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+    
+    def _on_scroll_linux(event):
+        """Maneja scroll con rueda de ratón en Linux"""
+        if event.num == 5:
+            canvas.yview_scroll(1, "units")
+        elif event.num == 4:
+            canvas.yview_scroll(-1, "units")
+    
+    def _on_scroll_mac(event):
+        """Maneja scroll con trackpad/rueda en Mac"""
+        canvas.yview_scroll(int(-1*event.delta), "units")
+    
+    sistema = platform.system()
+    
+    # Bind específico para cada SO - SOLO al canvas
+    if sistema == "Windows":
+        canvas.bind_all("<MouseWheel>", _on_scroll_windows)
+    elif sistema == "Darwin":  # macOS
+        canvas.bind_all("<MouseWheel>", _on_scroll_mac)
+    else:  # Linux
+        canvas.bind_all("<Button-4>", _on_scroll_linux)
+        canvas.bind_all("<Button-5>", _on_scroll_linux)
+    
+    # Destruir bindings cuando se cierre la ventana
+    def _cleanup():
+        if sistema == "Windows":
+            canvas.unbind_all("<MouseWheel>")
+        elif sistema == "Darwin":
+            canvas.unbind_all("<MouseWheel>")
+        else:
+            canvas.unbind_all("<Button-4>")
+            canvas.unbind_all("<Button-5>")
+    
+    parent_ventana.bind("<Destroy>", lambda e: _cleanup() if e.widget == parent_ventana else None)
+    
+    # Empaquetar
+    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    
+    # Permitir que canvas reciba focus para eventos de teclado
+    canvas.focus_set()
+    
+    return canvas, scrollable_frame
+
+
 class VentanaPrincipal:
     """Ventana principal del sistema"""
     
@@ -63,46 +149,12 @@ class VentanaPrincipal:
         
         # Actualizar total del día
         self.actualizar_total_dia()
-
+    
     def crear_widgets(self):
         """Crea todos los widgets de la ventana principal - RESPONSIVE CON SCROLLBAR"""
         
         # ===== CANVAS SCROLLABLE PARA TODA LA VENTANA =====
-        frame_canvas = ttk.Frame(self.root)
-        frame_canvas.pack(fill=tk.BOTH, expand=True)
-        
-        canvas = tk.Canvas(frame_canvas, bg='white', highlightthickness=0)
-        scrollbar = ttk.Scrollbar(frame_canvas, orient=tk.VERTICAL, command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas)
-        
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Permitir scroll con rueda de ratón SOLO en canvas
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        
-        def _on_mousewheel_linux(event):
-            if event.num == 5:
-                canvas.yview_scroll(3, "units")
-            elif event.num == 4:
-                canvas.yview_scroll(-3, "units")
-        
-        import platform
-        if platform.system() == "Windows":
-            canvas.bind("<MouseWheel>", _on_mousewheel)
-        else:
-            canvas.bind("<Button-4>", _on_mousewheel_linux)
-            canvas.bind("<Button-5>", _on_mousewheel_linux)
-        
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        # ===== FIN CANVAS =====
+        self.canvas, scrollable_frame = crear_ventana_scrollable(self.root, None)
         
         # Frame superior con título y total
         frame_superior = ttk.Frame(scrollable_frame, padding="10")
@@ -110,11 +162,11 @@ class VentanaPrincipal:
         
         nombre_oficina = obtener_configuracion('nombre_oficina') or 'SISTEMA DE CONTROL DE RIEGOS'
         ttk.Label(frame_superior, text=f"🌾 {nombre_oficina[:60]}",
-                 font=('Helvetica', 11, 'bold')).pack()
+                  font=('Helvetica', 11, 'bold')).pack()
         
         fecha_texto = datetime.now().strftime('%d/%m/%Y')
         ttk.Label(frame_superior, text=f"📅 {fecha_texto}",
-                 font=('Helvetica', 10)).pack()
+                  font=('Helvetica', 10)).pack()
         
         # Panel de venta del día
         frame_venta = ttk.LabelFrame(frame_superior, text="VENTA DEL DÍA", padding="10")
@@ -122,8 +174,8 @@ class VentanaPrincipal:
         
         ttk.Label(frame_venta, text="💵 $", font=('Helvetica', 20)).pack(side=tk.LEFT)
         label_total = ttk.Label(frame_venta, textvariable=self.total_dia,
-                               font=('Helvetica', 20, 'bold'),
-                               foreground='green')
+                                font=('Helvetica', 20, 'bold'),
+                                foreground='green')
         label_total.pack(side=tk.LEFT)
         
         # Frame de búsqueda
@@ -133,14 +185,14 @@ class VentanaPrincipal:
         ttk.Label(frame_busqueda, text="🔍").pack(side=tk.LEFT, padx=5)
         self.entry_busqueda = ttk.Entry(frame_busqueda, width=40, font=('Helvetica', 11))
         self.entry_busqueda.pack(side=tk.LEFT, padx=5)
-        self.entry_busqueda.bind('<KeyRelease>', self.on_buscar)
+        self.entry_busqueda.bind('<Return>', self.on_buscar)
         
         ttk.Button(frame_busqueda, text="Buscar",
-                  command=self.on_buscar).pack(side=tk.LEFT, padx=5)
+                   command=self.on_buscar).pack(side=tk.LEFT, padx=5)
         ttk.Button(frame_busqueda, text="Limpiar",
-                  command=self.limpiar_busqueda).pack(side=tk.LEFT, padx=5)
+                   command=self.limpiar_busqueda).pack(side=tk.LEFT, padx=5)
         ttk.Button(frame_busqueda, text="➕ Nuevo Campesino",
-                  command=self.abrir_form_nuevo_campesino).pack(side=tk.LEFT, padx=20)
+                   command=self.abrir_form_nuevo_campesino).pack(side=tk.LEFT, padx=20)
         
         # Frame de resultados
         frame_resultados = ttk.Frame(scrollable_frame, padding="10")
@@ -183,38 +235,38 @@ class VentanaPrincipal:
         frame_botones.pack(fill=tk.X, padx=5, pady=2)
         
         ttk.Button(frame_botones, text="🌱 Siembra",
-                  command=lambda: self.abrir_ventana_venta('nueva'),
-                  width=12).pack(side=tk.LEFT, padx=2, pady=2)
+                   command=lambda: self.abrir_ventana_venta('nueva'),
+                   width=12).pack(side=tk.LEFT, padx=2, pady=2)
         ttk.Button(frame_botones, text="💧 Riego",
-                  command=lambda: self.abrir_ventana_venta('riego'),
-                  width=12).pack(side=tk.LEFT, padx=2, pady=2)
+                   command=lambda: self.abrir_ventana_venta('riego'),
+                   width=12).pack(side=tk.LEFT, padx=2, pady=2)
         ttk.Button(frame_botones, text="📋 Detalle",
-                  command=self.abrir_detalle_dia,
-                  width=12).pack(side=tk.LEFT, padx=2, pady=2)
+                   command=self.abrir_detalle_dia,
+                   width=12).pack(side=tk.LEFT, padx=2, pady=2)
         ttk.Button(frame_botones, text="📜 Historial",
-                  command=self.abrir_historial_campesino,
-                  width=12).pack(side=tk.LEFT, padx=2, pady=2)
+                   command=self.abrir_historial_campesino,
+                   width=12).pack(side=tk.LEFT, padx=2, pady=2)
         
         # Frame de botones inferiores
         frame_botones_inf = ttk.Frame(scrollable_frame, padding="5")
         frame_botones_inf.pack(fill=tk.X, padx=5, pady=2)
         
         ttk.Button(frame_botones_inf, text="📊 Reporte",
-                  command=self.generar_reporte_dia, width=12).pack(side=tk.LEFT, padx=2, pady=2)
+                   command=self.generar_reporte_dia, width=12).pack(side=tk.LEFT, padx=2, pady=2)
         ttk.Button(frame_botones_inf, text="🔒 Cerrar Día",
-                  command=self.cerrar_dia_dialog, width=12).pack(side=tk.LEFT, padx=2, pady=2)
+                   command=self.cerrar_dia_dialog, width=12).pack(side=tk.LEFT, padx=2, pady=2)
         ttk.Button(frame_botones_inf, text="🔄 Ciclo",
-                  command=lambda: VentanaReiniciarCiclo(self.root), width=12).pack(side=tk.LEFT, padx=2, pady=2)
+                   command=lambda: VentanaReiniciarCiclo(self.root), width=12).pack(side=tk.LEFT, padx=2, pady=2)
         ttk.Button(frame_botones_inf, text="⚙️ Config",
-                  command=self.abrir_configuracion, width=12).pack(side=tk.LEFT, padx=2, pady=2)
+                   command=self.abrir_configuracion, width=12).pack(side=tk.LEFT, padx=2, pady=2)
         ttk.Button(frame_botones_inf, text="💾 Backup",
-                  command=self.crear_backup_manual, width=12).pack(side=tk.LEFT, padx=2, pady=2)
+                   command=self.crear_backup_manual, width=12).pack(side=tk.LEFT, padx=2, pady=2)
         ttk.Button(frame_botones_inf, text="🔧 Admin",
-                  command=self.abrir_administrar_datos, width=12).pack(side=tk.LEFT, padx=2, pady=2)
+                   command=self.abrir_administrar_datos, width=12).pack(side=tk.LEFT, padx=2, pady=2)
         
         # Cargar todos los campesinos
         self.cargar_todos_campesinos()
-
+    
     def cargar_todos_campesinos(self):
         """Carga todos los campesinos en la tabla"""
         self.tree.delete(*self.tree.get_children())
@@ -234,11 +286,10 @@ class VentanaPrincipal:
                 cultivo,
                 riegos
             ), tags=(str(c['id']),))
-
+    
     def on_buscar(self, event=None):
         """Busca campesinos"""
         termino = self.entry_busqueda.get().strip()
-        
         if not termino:
             self.cargar_todos_campesinos()
             return
@@ -260,27 +311,26 @@ class VentanaPrincipal:
                 cultivo,
                 riegos
             ), tags=(str(c['id']),))
-
+    
     def limpiar_busqueda(self):
         """Limpia la búsqueda"""
         self.entry_busqueda.delete(0, tk.END)
         self.cargar_todos_campesinos()
-
+    
     def on_seleccionar_campesino(self, event):
         """Maneja la selección de un campesino"""
         selection = self.tree.selection()
-        
         if selection:
             item = self.tree.item(selection[0])
             if item['tags']:
                 campesino_id = int(item['tags'][0])
                 self.campesino_seleccionado = obtener_campesino_por_id(campesino_id)
-
+    
     def on_doble_click(self, event):
         """Abre ventana de venta con doble click"""
         if self.campesino_seleccionado:
             self.abrir_ventana_venta('riego')
-
+    
     def abrir_ventana_venta(self, tipo):
         """Abre la ventana de venta"""
         if not self.campesino_seleccionado:
@@ -288,11 +338,11 @@ class VentanaPrincipal:
             return
         
         VentanaVenta(self.root, self.campesino_seleccionado, tipo, self)
-
+    
     def abrir_detalle_dia(self):
         """Abre la ventana de detalle del día"""
         VentanaDetalleDia(self.root, self)
-
+    
     def abrir_historial_campesino(self):
         """Abre el historial del campesino seleccionado"""
         if not self.campesino_seleccionado:
@@ -300,24 +350,24 @@ class VentanaPrincipal:
             return
         
         VentanaHistorial(self.root, self.campesino_seleccionado)
-
+    
     def abrir_form_nuevo_campesino(self):
         """Abre el formulario para crear un nuevo campesino"""
         FormularioCampesino(self.root, None, self)
-
+    
     def abrir_configuracion(self):
         """Abre el diálogo de configuración"""
         DialogoConfiguracion(self.root)
-
+    
     def abrir_administrar_datos(self):
         """Abre el diálogo de administración de datos"""
         VentanaAdministrarDatos(self.root, self)
-
+    
     def actualizar_total_dia(self):
         """Actualiza el total del día"""
         total = calcular_total_dia(self.fecha_actual)
         self.total_dia.set(f"{total:,.2f}")
-
+    
     def generar_reporte_dia(self):
         """Genera el reporte del día"""
         try:
@@ -331,29 +381,30 @@ class VentanaPrincipal:
             messagebox.showinfo("Éxito", f"Reporte generado exitosamente\n{len(recibos)} recibos")
         except Exception as e:
             messagebox.showerror("Error", f"Error al generar reporte:\n{str(e)}")
-
+    
     def cerrar_dia_dialog(self):
         """Diálogo para cerrar el día"""
         if messagebox.askyesno("Cerrar Día",
-                              "¿Desea generar el reporte del día y cerrar?"):
+                               "¿Desea generar el reporte del día y cerrar?"):
             try:
                 resultado = cerrar_dia()
                 mensaje = f"Día cerrado exitosamente\n"
                 mensaje += f"Fecha: {resultado['fecha']}\n"
                 mensaje += f"Total: ${resultado['total']:,.2f}\n"
                 mensaje += f"Recibos: {resultado['cantidad_recibos']}"
+                
                 messagebox.showinfo("Día Cerrado", mensaje)
                 
                 if messagebox.askyesno("Reiniciar Contador",
-                                      "¿Desea reiniciar el contador de venta a $0.00?"):
+                                       "¿Desea reiniciar el contador de venta a $0.00?"):
                     self.total_dia.set(0.0)
             except Exception as e:
                 messagebox.showerror("Error", f"Error al cerrar día:\n{str(e)}")
-
+    
     def crear_backup_manual(self):
         """Crea un backup manual"""
         if messagebox.askyesno("Crear Backup",
-                              "¿Desea crear un respaldo de la base de datos?"):
+                               "¿Desea crear un respaldo de la base de datos?"):
             try:
                 ruta = crear_backup("Backup manual")
                 if ruta:
@@ -362,15 +413,17 @@ class VentanaPrincipal:
                     messagebox.showerror("Error", "No se pudo crear el backup")
             except Exception as e:
                 messagebox.showerror("Error", f"Error al crear backup:\n{str(e)}")
+
+
 # ==================== VENTANA DE VENTA ====================
 
 class VentanaVenta:
-    """Ventana para vender riegos o iniciar nueva siembra"""
+    """Ventana para vender riegos o iniciar nueva siembra - CON SCROLLBAR"""
     
     def __init__(self, parent, campesino, tipo, ventana_principal):
         self.ventana = tk.Toplevel(parent)
         self.ventana.title("Venta de Riego")
-        self.ventana.geometry("600x650")
+        self.ventana.geometry("600x700")
         self.ventana.transient(parent)
         self.ventana.grab_set()
         
@@ -378,17 +431,17 @@ class VentanaVenta:
         self.tipo = tipo
         self.ventana_principal = ventana_principal
         
+        # ===== USAR SCROLLBAR =====
+        self.canvas, self.frame_principal = crear_ventana_scrollable(self.ventana, None)
+        
         self.crear_widgets()
-
+    
     def crear_widgets(self):
         """Crea los widgets de la ventana"""
         
-        frame_principal = ttk.Frame(self.ventana, padding="20")
-        frame_principal.pack(fill=tk.BOTH, expand=True)
-        
-        # Frame de información
-        frame_info = ttk.LabelFrame(frame_principal, text="📋 Datos del Campesino", padding="15")
-        frame_info.pack(fill=tk.X, padx=0, pady=10)
+        # Frame de información del campesino
+        frame_info = ttk.LabelFrame(self.frame_principal, text="Información del Campesino", padding="10")
+        frame_info.pack(fill=tk.X, padx=10, pady=10)
         
         info_text = f"""
 Nombre: {self.campesino['nombre']}
@@ -401,49 +454,47 @@ Superficie: {self.campesino['superficie']} hectáreas
         
         # Información de siembra actual
         siembra = obtener_siembra_activa(self.campesino['id'])
-        
         if siembra:
             info_siembra = f"\n✅ Siembra activa: {siembra['cultivo']} - {siembra['numero_riegos']} riegos realizados"
             ttk.Label(frame_info, text=info_siembra,
-                     font=('Helvetica', 10, 'bold'),
-                     foreground='green').pack(anchor=tk.W)
+                      font=('Helvetica', 10, 'bold'),
+                      foreground='green').pack(anchor=tk.W)
         else:
             ttk.Label(frame_info, text="\n⚠️ No tiene siembra activa",
-                     font=('Helvetica', 10, 'bold'),
-                     foreground='orange').pack(anchor=tk.W)
+                      font=('Helvetica', 10, 'bold'),
+                      foreground='orange').pack(anchor=tk.W)
         
         # ===== SECCIÓN DE EDITAR SIEMBRA/RIEGO =====
-        frame_editar = ttk.LabelFrame(frame_principal, text="✏️ Editar Siembra/Riego", padding="10")
-        frame_editar.pack(fill=tk.X, padx=0, pady=10)
+        frame_editar = ttk.LabelFrame(self.frame_principal, text="✏️ Editar Siembra/Riego", padding="10")
+        frame_editar.pack(fill=tk.X, padx=10, pady=10)
         
         ttk.Button(frame_editar, text="✏️ Administrar Siembra y Riegos",
-                  command=self.abrir_editar_siembra_riego,
-                  width=50).pack(padx=5, pady=5)
+                   command=self.abrir_editar_siembra_riego,
+                   width=50).pack(padx=5, pady=5)
         
         ttk.Label(frame_editar, text="Haz clic para editar/agregar siembras y riegos",
-                 font=('Helvetica', 9),
-                 foreground='gray').pack()
-        # ===== FIN DE SECCIÓN =====
+                  font=('Helvetica', 9),
+                  foreground='gray').pack()
         
         # Frame de opciones
-        frame_opciones = ttk.LabelFrame(frame_principal, text="¿Qué desea hacer?", padding="15")
-        frame_opciones.pack(fill=tk.X, padx=0, pady=10)
+        frame_opciones = ttk.LabelFrame(self.frame_principal, text="¿Qué desea hacer?", padding="15")
+        frame_opciones.pack(fill=tk.X, padx=10, pady=10)
         
         self.var_accion = tk.StringVar(value=self.tipo)
         
         # Radio buttons
         rb_nueva = ttk.Radiobutton(frame_opciones,
-                                   text="🌱 Iniciar nueva siembra (cerrará la siembra actual)",
-                                   variable=self.var_accion,
-                                   value='nueva',
-                                   command=self.on_cambiar_accion)
+                                    text="🌱 Iniciar nueva siembra (cerrará la siembra actual)",
+                                    variable=self.var_accion,
+                                    value='nueva',
+                                    command=self.on_cambiar_accion)
         rb_nueva.pack(anchor=tk.W, pady=5)
         
         rb_riego = ttk.Radiobutton(frame_opciones,
-                                   text="💧 Vender riego adicional",
-                                   variable=self.var_accion,
-                                   value='riego',
-                                   command=self.on_cambiar_accion)
+                                    text="💧 Vender riego adicional",
+                                    variable=self.var_accion,
+                                    value='riego',
+                                    command=self.on_cambiar_accion)
         rb_riego.pack(anchor=tk.W, pady=5)
         
         # Selección de cultivo
@@ -452,9 +503,9 @@ Superficie: {self.campesino['superficie']} hectáreas
         
         ttk.Label(frame_cultivo, text="Cultivo:", font=('Helvetica', 10)).pack(side=tk.LEFT, padx=5)
         self.combo_cultivo = ttk.Combobox(frame_cultivo,
-                                         values=CULTIVOS,
-                                         state='readonly',
-                                         width=20)
+                                          values=CULTIVOS,
+                                          state='readonly',
+                                          width=20)
         self.combo_cultivo.pack(side=tk.LEFT, padx=5)
         
         # Preseleccionar cultivo si hay siembra activa
@@ -462,42 +513,42 @@ Superficie: {self.campesino['superficie']} hectáreas
             idx = CULTIVOS.index(siembra['cultivo']) if siembra['cultivo'] in CULTIVOS else -1
             if idx >= 0:
                 self.combo_cultivo.current(idx)
-            self.combo_cultivo.config(state='disabled')
+                self.combo_cultivo.config(state='disabled')
         
         # Frame de costo
-        frame_costo = ttk.LabelFrame(frame_principal, text="💰 Monto a Cobrar", padding="15")
-        frame_costo.pack(fill=tk.X, padx=0, pady=10)
+        frame_costo = ttk.LabelFrame(self.frame_principal, text="💰 Monto a Cobrar", padding="15")
+        frame_costo.pack(fill=tk.X, padx=10, pady=10)
         
         costo = calcular_costo(self.campesino['superficie'])
-        
         ttk.Label(frame_costo,
-                 text=f"${costo:,.2f}",
-                 font=('Helvetica', 20, 'bold'),
-                 foreground='green').pack()
+                  text=f"${costo:,.2f}",
+                  font=('Helvetica', 20, 'bold'),
+                  foreground='green').pack()
         
         tarifa = obtener_configuracion('tarifa_hectarea')
         ttk.Label(frame_costo,
-                 text=f"({self.campesino['superficie']} ha × ${tarifa}/ha)",
-                 font=('Helvetica', 9),
-                 foreground='gray').pack()
+                  text=f"({self.campesino['superficie']} ha × ${tarifa}/ha)",
+                  font=('Helvetica', 9),
+                  foreground='gray').pack()
         
         # Frame de botones
-        frame_botones = ttk.Frame(frame_principal)
-        frame_botones.pack(fill=tk.X, padx=0, pady=20)
+        frame_botones = ttk.Frame(self.frame_principal)
+        frame_botones.pack(fill=tk.X, padx=10, pady=20)
         
         ttk.Button(frame_botones,
-                  text="✅ Generar Recibo e Imprimir",
-                  command=self.generar_recibo,
-                  width=30).pack(side=tk.LEFT, padx=5)
+                   text="✅ Generar Recibo e Imprimir",
+                   command=self.generar_recibo,
+                   width=30).pack(side=tk.LEFT, padx=5)
+        
         ttk.Button(frame_botones,
-                  text="❌ Cancelar",
-                  command=self.ventana.destroy,
-                  width=15).pack(side=tk.LEFT, padx=5)
-
+                   text="❌ Cancelar",
+                   command=self.ventana.destroy,
+                   width=15).pack(side=tk.LEFT, padx=5)
+    
     def abrir_editar_siembra_riego(self):
         """Abre la ventana para editar siembra y riego"""
         VentanaEditarSiembraRiego(self.ventana, self.campesino['id'], self.campesino['nombre'], self.ventana_principal)
-
+    
     def on_cambiar_accion(self):
         """Maneja el cambio de acción"""
         if self.var_accion.get() == 'riego':
@@ -506,10 +557,10 @@ Superficie: {self.campesino['superficie']} hectáreas
                 idx = CULTIVOS.index(siembra['cultivo']) if siembra['cultivo'] in CULTIVOS else -1
                 if idx >= 0:
                     self.combo_cultivo.current(idx)
-                self.combo_cultivo.config(state='disabled')
+                    self.combo_cultivo.config(state='disabled')
         else:
             self.combo_cultivo.config(state='readonly')
-
+    
     def generar_recibo(self):
         """Genera el recibo y lo imprime - RECIBOS TEMPORALES"""
         # Validar cultivo
@@ -537,7 +588,7 @@ Superficie: {self.campesino['superficie']} hectáreas
             
             # Preguntar si desea imprimir
             if messagebox.askyesno("Imprimir Recibo",
-                                  f"Recibo generado exitosamente\nFolio: {resultado['folio']}\nCosto: ${resultado['costo']:.2f}\n¿Desea imprimir?"):
+                                   f"Recibo generado exitosamente\nFolio: {resultado['folio']}\nCosto: ${resultado['costo']:.2f}\n\n¿Desea imprimir?"):
                 imprimir_recibo_y_limpiar(pdf_path)
             else:
                 # Eliminar si no va a imprimir
@@ -547,7 +598,7 @@ Superficie: {self.campesino['superficie']} hectáreas
                     pass
             
             messagebox.showinfo("Éxito",
-                              f"{tipo_texto} registrado exitosamente\nFolio: {resultado['folio']}\nCosto: ${resultado['costo']:.2f}")
+                                f"{tipo_texto} registrado exitosamente\nFolio: {resultado['folio']}\nCosto: ${resultado['costo']:.2f}")
             
             # Actualizar ventana principal
             self.ventana_principal.actualizar_total_dia()
@@ -555,16 +606,17 @@ Superficie: {self.campesino['superficie']} hectáreas
             
             # Cerrar ventana
             self.ventana.destroy()
-        
+            
         except ValueError as e:
             messagebox.showerror("Error de Validación", str(e))
         except Exception as e:
             messagebox.showerror("Error", f"Error al generar recibo:\n{str(e)}")
 
+
 # ==================== VENTANA EDITAR SIEMBRA Y RIEGO ====================
 
 class VentanaEditarSiembraRiego:
-    """Ventana para editar la siembra y riego de un campesino - CON RIEGOS EDITABLES"""
+    """Ventana para editar la siembra y riego de un campesino - CON SCROLLBAR"""
     
     def __init__(self, parent, campesino_id: int, campesino_nombre: str, ventana_principal=None):
         self.campesino_id = campesino_id
@@ -574,28 +626,27 @@ class VentanaEditarSiembraRiego:
         
         self.ventana = tk.Toplevel(parent)
         self.ventana.title(f"✏️ Editar Siembra/Riego - {campesino_nombre}")
-        self.ventana.geometry("600x550")
+        self.ventana.geometry("600x600")
         self.ventana.transient(parent)
         self.ventana.grab_set()
         
-        # Obtener siembra activa si existe
         self.siembra_activa = obtener_siembra_activa(campesino_id)
         
+        # ===== USAR SCROLLBAR =====
+        self.canvas, self.frame_principal = crear_ventana_scrollable(self.ventana, None)
+        
         self.crear_widgets()
-
+    
     def crear_widgets(self):
         """Crea los widgets de la ventana"""
         
-        frame_principal = ttk.Frame(self.ventana, padding="20")
-        frame_principal.pack(fill=tk.BOTH, expand=True)
-        
         # Título
-        ttk.Label(frame_principal, text=f"✏️ Editar Siembra de {self.campesino_nombre}", 
-                 font=('Helvetica', 12, 'bold')).pack(pady=10)
+        ttk.Label(self.frame_principal, text=f"✏️ Editar Siembra de {self.campesino_nombre}",
+                  font=('Helvetica', 12, 'bold')).pack(pady=10)
         
         # Frame de formulario
-        frame_form = ttk.LabelFrame(frame_principal, text="Datos de la Siembra", padding="10")
-        frame_form.pack(fill=tk.BOTH, expand=True, padx=0, pady=10)
+        frame_form = ttk.LabelFrame(self.frame_principal, text="Datos de la Siembra", padding="10")
+        frame_form.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # Cultivo
         ttk.Label(frame_form, text="Cultivo:").grid(row=0, column=0, sticky="w", pady=5)
@@ -645,8 +696,8 @@ class VentanaEditarSiembraRiego:
             self.entry_riegos.insert(0, "0")
         
         # Información adicional
-        info_frame = ttk.LabelFrame(frame_principal, text="ℹ️ Información", padding="10")
-        info_frame.pack(fill=tk.X, padx=0, pady=10)
+        info_frame = ttk.LabelFrame(self.frame_principal, text="ℹ️ Información", padding="10")
+        info_frame.pack(fill=tk.X, padx=10, pady=10)
         
         if self.siembra_activa:
             info_text = f"Siembra activa desde: {self.siembra_activa['fecha_inicio']}"
@@ -656,8 +707,8 @@ class VentanaEditarSiembraRiego:
             ttk.Label(info_frame, text=info_text, foreground='orange').pack(anchor="w")
         
         # Frame de botones
-        frame_botones = ttk.Frame(frame_principal, padding="10")
-        frame_botones.pack(fill=tk.X, padx=0, pady=15)
+        frame_botones = ttk.Frame(self.frame_principal, padding="10")
+        frame_botones.pack(fill=tk.X, padx=10, pady=15)
         
         ttk.Button(frame_botones, text="💾 Guardar", command=self.guardar).pack(side=tk.LEFT, padx=5)
         ttk.Button(frame_botones, text="❌ Cancelar", command=self.ventana.destroy).pack(side=tk.LEFT, padx=5)
@@ -666,7 +717,7 @@ class VentanaEditarSiembraRiego:
             ttk.Button(frame_botones, text="➕ Agregar Riego", command=self.agregar_riego).pack(side=tk.LEFT, padx=5)
         
         frame_form.columnconfigure(1, weight=1)
-
+    
     def solo_numeros(self, value):
         """Valida que solo se ingresen números"""
         if value == "":
@@ -676,9 +727,9 @@ class VentanaEditarSiembraRiego:
             return True
         except ValueError:
             return False
-
+    
     def guardar(self):
-        """Guarda los cambios en la siembra - CON MEJOR MANEJO DE CONEXIONES"""
+        """Guarda los cambios en la siembra"""
         cultivo = self.combo_cultivo.get()
         ciclo = self.entry_ciclo.get()
         fecha_inicio = self.entry_fecha_inicio.get()
@@ -740,7 +791,6 @@ class VentanaEditarSiembraRiego:
                 
                 # Actualizar la fecha de inicio y número de riegos si es necesario
                 datos_actualizar = {}
-                
                 if fecha_inicio != datetime.now().strftime('%Y-%m-%d'):
                     datos_actualizar['fecha_inicio'] = fecha_inicio
                 
@@ -753,17 +803,19 @@ class VentanaEditarSiembraRiego:
                 messagebox.showinfo("Éxito", "Siembra creada correctamente")
             
             self.ventana.destroy()
+            
             if self.ventana_principal:
                 self.ventana_principal.cargar_todos_campesinos()
-        
+                
         except Exception as e:
             import traceback
             print(f"Error detallado: {traceback.format_exc()}")
             messagebox.showerror("Error", f"Error al guardar: {str(e)}")
-
+    
     def agregar_riego(self):
         """Abre ventana para agregar un riego manualmente"""
         VentanaAgregarRiego(self.ventana, self.campesino_id, self.siembra_id, self.campesino_nombre)
+
 
 # ==================== VENTANA AGREGAR RIEGO ====================
 
@@ -777,21 +829,20 @@ class VentanaAgregarRiego:
         
         self.ventana = tk.Toplevel(parent)
         self.ventana.title(f"➕ Agregar Riego - {campesino_nombre}")
-        self.ventana.geometry("500x400")
+        self.ventana.geometry("500x450")
         self.ventana.transient(parent)
         self.ventana.grab_set()
         
         self.crear_widgets()
-
+    
     def crear_widgets(self):
         """Crea los widgets de la ventana"""
-        
         frame_principal = ttk.Frame(self.ventana, padding="20")
         frame_principal.pack(fill=tk.BOTH, expand=True)
         
         # Título
-        ttk.Label(frame_principal, text=f"Agregar Riego a {self.campesino_nombre}", 
-                 font=('Helvetica', 12, 'bold')).pack(pady=10)
+        ttk.Label(frame_principal, text=f"Agregar Riego a {self.campesino_nombre}",
+                  font=('Helvetica', 12, 'bold')).pack(pady=10)
         
         # Frame de formulario
         frame_form = ttk.LabelFrame(frame_principal, text="Datos del Riego", padding="10")
@@ -803,8 +854,8 @@ class VentanaAgregarRiego:
         
         # Número de riego (calculado automáticamente)
         ttk.Label(frame_form, text="Número de Riego:").grid(row=0, column=0, sticky="w", pady=5)
-        self.label_numero_riego = ttk.Label(frame_form, text=str(proximo_numero), 
-                                           font=('Helvetica', 11, 'bold'))
+        self.label_numero_riego = ttk.Label(frame_form, text=str(proximo_numero),
+                                            font=('Helvetica', 11, 'bold'))
         self.label_numero_riego.grid(row=0, column=1, sticky="w", pady=5, padx=10)
         
         # Tipo de acción
@@ -833,7 +884,7 @@ class VentanaAgregarRiego:
         ttk.Button(frame_botones, text="❌ Cancelar", command=self.ventana.destroy).pack(side=tk.LEFT, padx=5)
         
         frame_form.columnconfigure(1, weight=1)
-
+    
     def guardar(self):
         """Guarda el nuevo riego"""
         try:
@@ -850,7 +901,6 @@ class VentanaAgregarRiego:
             
             # Crear recibo/riego manualmente
             folio = incrementar_folio()
-            
             siembra = obtener_siembra_por_id(self.siembra_id)
             numero_riego = siembra['numero_riegos'] + 1
             
@@ -878,6 +928,7 @@ class VentanaAgregarRiego:
         except Exception as e:
             messagebox.showerror("Error", f"Error al guardar riego: {str(e)}")
 
+
 # ==================== VENTANA REINICIAR CICLO ====================
 
 class VentanaReiniciarCiclo:
@@ -886,7 +937,7 @@ class VentanaReiniciarCiclo:
     def __init__(self, parent):
         self.ventana = tk.Toplevel(parent)
         self.ventana.title("🔄 Reiniciar Ciclo")
-        self.ventana.geometry("400x280")
+        self.ventana.geometry("400x320")
         self.ventana.resizable(False, False)
         self.ventana.transient(parent)
         self.ventana.grab_set()
@@ -896,14 +947,14 @@ class VentanaReiniciarCiclo:
         frame_principal.pack(fill=tk.BOTH, expand=True)
         
         # Advertencia
-        ttk.Label(frame_principal, text="⚠️ REINICIAR CICLO", 
-                 font=('Helvetica', 14, 'bold'), foreground='red').pack(pady=10)
+        ttk.Label(frame_principal, text="⚠️ REINICIAR CICLO",
+                  font=('Helvetica', 14, 'bold'), foreground='red').pack(pady=10)
         
         # Mensaje informativo
         mensaje = """Esta acción:
+
 ✓ Reiniciará el número de folio a 1
 ✓ Actualizará el ciclo agrícola
-
 ⚠️ NO borrará datos de campesinos
 ⚠️ NO borrará datos de siembras
 
@@ -925,7 +976,7 @@ class VentanaReiniciarCiclo:
         
         ttk.Button(frame_botones, text="✅ Reiniciar", command=self.reiniciar).pack(side=tk.LEFT, padx=5)
         ttk.Button(frame_botones, text="❌ Cancelar", command=self.ventana.destroy).pack(side=tk.LEFT, padx=5)
-
+    
     def reiniciar(self):
         """Ejecuta el reinicio del ciclo"""
         nuevo_ciclo = self.entry_ciclo.get().strip()
@@ -944,40 +995,42 @@ class VentanaReiniciarCiclo:
             except Exception as e:
                 messagebox.showerror("Error", f"Error: {str(e)}")
 
+
 # ==================== VENTANA DETALLE DEL DÍA ====================
 
 class VentanaDetalleDia:
-    """Ventana para ver el detalle de ventas del día"""
+    """Ventana para ver el detalle de ventas del día - CON SCROLLBAR"""
     
     def __init__(self, parent, ventana_principal):
         self.ventana = tk.Toplevel(parent)
         self.ventana.title("Detalle del Día")
-        self.ventana.geometry("1100x600")
+        self.ventana.geometry("1100x650")
         self.ventana.transient(parent)
+        
         self.ventana_principal = ventana_principal
         self.fecha_actual = datetime.now().strftime('%Y-%m-%d')
         
+        # ===== USAR SCROLLBAR =====
+        self.canvas, self.frame_principal = crear_ventana_scrollable(self.ventana, None)
+        
         self.crear_widgets()
         self.cargar_recibos()
-
+    
     def crear_widgets(self):
         """Crea los widgets de la ventana"""
         
-        frame_principal = ttk.Frame(self.ventana, padding="10")
-        frame_principal.pack(fill=tk.BOTH, expand=True)
-        
         # Frame superior
-        frame_superior = ttk.Frame(frame_principal)
-        frame_superior.pack(fill=tk.X)
+        frame_superior = ttk.Frame(self.frame_principal)
+        frame_superior.pack(fill=tk.X, padx=10, pady=10)
         
         fecha_texto = datetime.now().strftime('%d/%m/%Y')
         ttk.Label(frame_superior,
-                 text=f"📊 Detalle de Ventas - {fecha_texto}",
-                 font=('Helvetica', 14, 'bold')).pack()
+                  text=f"📊 Detalle de Ventas - {fecha_texto}",
+                  font=('Helvetica', 14, 'bold')).pack()
         
         # Frame de tabla
-        frame_tabla = ttk.Frame(frame_principal)
-        frame_tabla.pack(fill=tk.BOTH, expand=True, pady=10)
+        frame_tabla = ttk.Frame(self.frame_principal)
+        frame_tabla.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # Crear Treeview
         columnas = ('folio', 'hora', 'lote', 'nombre', 'cultivo', 'riego', 'monto')
@@ -1008,25 +1061,28 @@ class VentanaDetalleDia:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
         # Frame de botones de acciones
-        frame_acciones = ttk.Frame(frame_principal)
-        frame_acciones.pack(fill=tk.X, pady=5)
+        frame_acciones = ttk.Frame(self.frame_principal)
+        frame_acciones.pack(fill=tk.X, padx=10, pady=5)
         
         ttk.Button(frame_acciones,
-                  text="🗑️ Eliminar Recibo Seleccionado",
-                  command=self.eliminar_recibo).pack(side=tk.LEFT, padx=5)
+                   text="🗑️ Eliminar Recibo Seleccionado",
+                   command=self.eliminar_recibo).pack(side=tk.LEFT, padx=5)
+        
         ttk.Button(frame_acciones,
-                  text="🖨️ Reimprimir Recibo",
-                  command=self.reimprimir_recibo).pack(side=tk.LEFT, padx=5)
+                   text="🖨️ Reimprimir Recibo",
+                   command=self.reimprimir_recibo).pack(side=tk.LEFT, padx=5)
+        
         ttk.Button(frame_acciones,
-                  text="📥 Exportar a Excel",
-                  command=self.exportar_excel).pack(side=tk.LEFT, padx=5)
+                   text="📥 Exportar a Excel",
+                   command=self.exportar_excel).pack(side=tk.LEFT, padx=5)
+        
         ttk.Button(frame_acciones,
-                  text="🔄 Actualizar",
-                  command=self.cargar_recibos).pack(side=tk.LEFT, padx=5)
+                   text="🔄 Actualizar",
+                   command=self.cargar_recibos).pack(side=tk.LEFT, padx=5)
         
         # Frame de totales
-        frame_totales = ttk.LabelFrame(frame_principal, text="Totales del Día", padding="10")
-        frame_totales.pack(fill=tk.X, padx=0, pady=10)
+        frame_totales = ttk.LabelFrame(self.frame_principal, text="Totales del Día", padding="10")
+        frame_totales.pack(fill=tk.X, padx=10, pady=10)
         
         self.label_total = ttk.Label(frame_totales,
                                      text="Total: $0.00",
@@ -1035,15 +1091,14 @@ class VentanaDetalleDia:
         self.label_total.pack()
         
         self.label_cantidad = ttk.Label(frame_totales,
-                                       text="Recibos emitidos: 0",
-                                       font=('Helvetica', 10))
+                                        text="Recibos emitidos: 0",
+                                        font=('Helvetica', 10))
         self.label_cantidad.pack()
-
+    
     def cargar_recibos(self):
         """Carga los recibos del día"""
         self.tree.delete(*self.tree.get_children())
         recibos = obtener_recibos_dia(self.fecha_actual)
-        
         total = 0
         
         for r in recibos:
@@ -1056,17 +1111,15 @@ class VentanaDetalleDia:
                 r['numero_riego'],
                 f"${r['costo']:.2f}"
             ), tags=(str(r['id']),))
-            
             total += r['costo']
         
         # Actualizar totales
         self.label_total.config(text=f"Total: ${total:,.2f}")
         self.label_cantidad.config(text=f"Recibos emitidos: {len(recibos)}")
-
+    
     def eliminar_recibo(self):
         """Elimina el recibo seleccionado"""
         selection = self.tree.selection()
-        
         if not selection:
             messagebox.showwarning("Advertencia", "Debe seleccionar un recibo")
             return
@@ -1078,32 +1131,30 @@ class VentanaDetalleDia:
         
         # Primera confirmación
         if not messagebox.askyesno("Confirmar Eliminación",
-                                  f"¿Eliminar recibo #{folio}?\nSe restará {monto} del total del día"):
+                                    f"¿Eliminar recibo #{folio}?\nSe restará {monto} del total del día"):
             return
         
         # Segunda confirmación
         if not messagebox.askyesno("Segunda Confirmación",
-                                  "Esta acción se registrará en auditoría.\n¿Está seguro de continuar?"):
+                                    "Esta acción se registrará en auditoría.\n¿Está seguro de continuar?"):
             return
         
         try:
             monto_restado = eliminar_recibo_dia(recibo_id, "Eliminado desde detalle del día")
             messagebox.showinfo("Éxito",
-                              f"Recibo eliminado exitosamente\nMonto restado: ${monto_restado:.2f}")
+                                f"Recibo eliminado exitosamente\nMonto restado: ${monto_restado:.2f}")
             
             # Actualizar
             self.cargar_recibos()
             self.ventana_principal.actualizar_total_dia()
-        
         except ValueError as e:
             messagebox.showerror("Error", str(e))
         except Exception as e:
             messagebox.showerror("Error", f"Error al eliminar recibo:\n{str(e)}")
-
+    
     def reimprimir_recibo(self):
         """Reimprime el recibo seleccionado - RECIBOS TEMPORALES"""
         selection = self.tree.selection()
-        
         if not selection:
             messagebox.showwarning("Advertencia", "Debe seleccionar un recibo")
             return
@@ -1113,7 +1164,6 @@ class VentanaDetalleDia:
         
         try:
             pdf_path = generar_recibo_pdf_temporal(recibo_id, es_reimpresion=True)
-            
             abrir_pdf(pdf_path)
             
             if messagebox.askyesno("Imprimir", "¿Desea imprimir la reimpresión?"):
@@ -1123,37 +1173,35 @@ class VentanaDetalleDia:
                     os.remove(pdf_path)
                 except:
                     pass
-        
         except Exception as e:
             messagebox.showerror("Error", f"Error al reimprimir:\n{str(e)}")
-
+    
     def exportar_excel(self):
         """Exporta los recibos a Excel"""
         try:
             recibos = obtener_recibos_dia(self.fecha_actual)
-            
             if not recibos:
                 messagebox.showinfo("Información", "No hay recibos para exportar")
                 return
             
             fecha_archivo = datetime.now().strftime('%Y%m%d')
             filename = f"recibos_{fecha_archivo}.xlsx"
-            
             filepath = exportar_a_excel(recibos, filename)
+            
             messagebox.showinfo("Éxito", f"Archivo exportado:\n{filepath}")
-        
         except Exception as e:
             messagebox.showerror("Error", f"Error al exportar:\n{str(e)}")
+
 
 # ==================== FORMULARIO CAMPESINO ====================
 
 class FormularioCampesino:
-    """Formulario para crear o editar campesino"""
+    """Formulario para crear o editar campesino - CON SCROLLBAR"""
     
     def __init__(self, parent, campesino_id, ventana_principal):
         self.ventana = tk.Toplevel(parent)
         self.ventana.title("Nuevo Campesino" if not campesino_id else "Editar Campesino")
-        self.ventana.geometry("500x550")
+        self.ventana.geometry("500x600")
         self.ventana.transient(parent)
         self.ventana.grab_set()
         
@@ -1161,12 +1209,15 @@ class FormularioCampesino:
         self.ventana_principal = ventana_principal
         self.campesino = obtener_campesino_por_id(campesino_id) if campesino_id else None
         
+        # ===== USAR SCROLLBAR =====
+        self.canvas, self.frame_principal = crear_ventana_scrollable(self.ventana, None)
+        
         self.crear_widgets()
-
+    
     def crear_widgets(self):
         """Crea los widgets del formulario"""
         
-        frame_form = ttk.Frame(self.ventana, padding="20")
+        frame_form = ttk.Frame(self.frame_principal, padding="20")
         frame_form.pack(fill=tk.BOTH, expand=True)
         
         # Número de lote
@@ -1212,14 +1263,13 @@ class FormularioCampesino:
         
         if self.campesino:
             self.entry_superficie.insert(0, str(self.campesino['superficie']))
-            
             siembra = obtener_siembra_activa(self.campesino_id)
             if siembra:
                 self.entry_superficie.config(state='disabled')
                 ttk.Label(frame_form,
-                         text="⚠️ No editable (tiene siembra activa)",
-                         foreground='orange',
-                         font=('Helvetica', 8)).grid(row=5, column=1, sticky=tk.W, padx=10)
+                          text="⚠️ No editable (tiene siembra activa)",
+                          foreground='orange',
+                          font=('Helvetica', 8)).grid(row=5, column=1, sticky=tk.W, padx=10)
         
         # Extensión de tierra (opcional)
         ttk.Label(frame_form, text="Extensión/Notas:", font=('Helvetica', 10)).grid(row=6, column=0, sticky=tk.W, pady=5)
@@ -1234,17 +1284,17 @@ class FormularioCampesino:
         frame_botones.grid(row=7, column=0, columnspan=2, pady=20)
         
         ttk.Button(frame_botones,
-                  text="💾 Guardar",
-                  command=self.guardar,
-                  width=15).pack(side=tk.LEFT, padx=5)
+                   text="💾 Guardar",
+                   command=self.guardar,
+                   width=15).pack(side=tk.LEFT, padx=5)
+        
         ttk.Button(frame_botones,
-                  text="❌ Cancelar",
-                  command=self.ventana.destroy,
-                  width=15).pack(side=tk.LEFT, padx=5)
-
+                   text="❌ Cancelar",
+                   command=self.ventana.destroy,
+                   width=15).pack(side=tk.LEFT, padx=5)
+    
     def guardar(self):
         """Guarda los datos del campesino"""
-        
         datos = {
             'numero_lote': self.entry_lote.get().strip(),
             'nombre': self.entry_nombre.get().strip(),
@@ -1274,41 +1324,42 @@ class FormularioCampesino:
             else:
                 crear_campesino(datos)
                 messagebox.showinfo("Éxito",
-                                  f"Campesino registrado exitosamente\nLote: {datos['numero_lote']}")
+                                    f"Campesino registrado exitosamente\nLote: {datos['numero_lote']}")
             
             self.ventana_principal.cargar_todos_campesinos()
             self.ventana.destroy()
-        
+            
         except ValueError as e:
             messagebox.showerror("Error", str(e))
         except Exception as e:
             messagebox.showerror("Error", f"Error al guardar:\n{str(e)}")
 
+
 # ==================== VENTANA HISTORIAL ====================
 
 class VentanaHistorial:
-    """Ventana para ver el historial de un campesino"""
+    """Ventana para ver el historial de un campesino - CON SCROLLBAR"""
     
     def __init__(self, parent, campesino):
         self.ventana = tk.Toplevel(parent)
         self.ventana.title(f"Historial - {campesino['nombre']}")
-        self.ventana.geometry("900x600")
+        self.ventana.geometry("900x650")
         self.ventana.transient(parent)
         
         self.campesino = campesino
         
+        # ===== USAR SCROLLBAR =====
+        self.canvas, self.frame_principal = crear_ventana_scrollable(self.ventana, None)
+        
         self.crear_widgets()
         self.cargar_historial()
-
+    
     def crear_widgets(self):
         """Crea los widgets de la ventana"""
         
-        frame_principal = ttk.Frame(self.ventana, padding="10")
-        frame_principal.pack(fill=tk.BOTH, expand=True)
-        
         # Frame superior con info del campesino
-        frame_info = ttk.LabelFrame(frame_principal, text="Información del Campesino", padding="10")
-        frame_info.pack(fill=tk.X, padx=0, pady=10)
+        frame_info = ttk.LabelFrame(self.frame_principal, text="Información del Campesino", padding="10")
+        frame_info.pack(fill=tk.X, padx=10, pady=10)
         
         info_text = f"""
 Nombre: {self.campesino['nombre']}
@@ -1319,8 +1370,8 @@ Superficie: {self.campesino['superficie']} ha
         ttk.Label(frame_info, text=info_text, font=('Helvetica', 10)).pack(anchor=tk.W)
         
         # Frame de siembras históricas
-        frame_siembras = ttk.LabelFrame(frame_principal, text="Historial de Siembras", padding="10")
-        frame_siembras.pack(fill=tk.BOTH, expand=True, padx=0, pady=5)
+        frame_siembras = ttk.LabelFrame(self.frame_principal, text="Historial de Siembras", padding="10")
+        frame_siembras.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
         # Treeview de siembras
         columnas = ('cultivo', 'fecha_inicio', 'fecha_fin', 'riegos', 'ciclo', 'estado')
@@ -1342,13 +1393,12 @@ Superficie: {self.campesino['superficie']} ha
         
         scrollbar = ttk.Scrollbar(frame_siembras, orient=tk.VERTICAL, command=self.tree_siembras.yview)
         self.tree_siembras.configure(yscroll=scrollbar.set)
-        
         self.tree_siembras.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
         # Frame de recibos
-        frame_recibos = ttk.LabelFrame(frame_principal, text="Recibos Emitidos", padding="10")
-        frame_recibos.pack(fill=tk.BOTH, expand=True, padx=0, pady=5)
+        frame_recibos = ttk.LabelFrame(self.frame_principal, text="Recibos Emitidos", padding="10")
+        frame_recibos.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
         # Treeview de recibos
         columnas_r = ('folio', 'fecha', 'cultivo', 'riego', 'monto')
@@ -1368,24 +1418,23 @@ Superficie: {self.campesino['superficie']} ha
         
         scrollbar_r = ttk.Scrollbar(frame_recibos, orient=tk.VERTICAL, command=self.tree_recibos.yview)
         self.tree_recibos.configure(yscroll=scrollbar_r.set)
-        
         self.tree_recibos.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar_r.pack(side=tk.RIGHT, fill=tk.Y)
         
         # Botones
-        frame_botones = ttk.Frame(frame_principal)
-        frame_botones.pack(fill=tk.X, padx=0, pady=10)
+        frame_botones = ttk.Frame(self.frame_principal)
+        frame_botones.pack(fill=tk.X, padx=10, pady=10)
         
         ttk.Button(frame_botones,
-                  text="🖨️ Reimprimir Recibo Seleccionado",
-                  command=self.reimprimir_recibo).pack(side=tk.LEFT, padx=5)
+                   text="🖨️ Reimprimir Recibo Seleccionado",
+                   command=self.reimprimir_recibo).pack(side=tk.LEFT, padx=5)
+        
         ttk.Button(frame_botones,
-                  text="🔄 Actualizar",
-                  command=self.cargar_historial).pack(side=tk.LEFT, padx=5)
-
+                   text="🔄 Actualizar",
+                   command=self.cargar_historial).pack(side=tk.LEFT, padx=5)
+    
     def cargar_historial(self):
         """Carga el historial de siembras y recibos"""
-        
         # Cargar siembras
         self.tree_siembras.delete(*self.tree_siembras.get_children())
         siembras = obtener_historial_siembras(self.campesino['id'])
@@ -1415,11 +1464,10 @@ Superficie: {self.campesino['superficie']} ha
                 r['numero_riego'],
                 f"${r['costo']:.2f}"
             ), tags=(str(r['id']),))
-
+    
     def reimprimir_recibo(self):
         """Reimprime el recibo seleccionado - RECIBOS TEMPORALES"""
         selection = self.tree_recibos.selection()
-        
         if not selection:
             messagebox.showwarning("Advertencia", "Debe seleccionar un recibo")
             return
@@ -1429,7 +1477,6 @@ Superficie: {self.campesino['superficie']} ha
         
         try:
             pdf_path = generar_recibo_pdf_temporal(recibo_id, es_reimpresion=True)
-            
             abrir_pdf(pdf_path)
             
             if messagebox.askyesno("Imprimir", "¿Desea imprimir?"):
@@ -1439,9 +1486,9 @@ Superficie: {self.campesino['superficie']} ha
                     os.remove(pdf_path)
                 except:
                     pass
-        
         except Exception as e:
             messagebox.showerror("Error", f"Error al reimprimir:\n{str(e)}")
+
 
 # ==================== DIÁLOGO DE CONFIGURACIÓN ====================
 
@@ -1451,21 +1498,19 @@ class DialogoConfiguracion:
     def __init__(self, parent):
         self.ventana = tk.Toplevel(parent)
         self.ventana.title("⚙️ Configuración del Sistema")
-        self.ventana.geometry("600x500")
+        self.ventana.geometry("600x550")
         self.ventana.transient(parent)
         self.ventana.grab_set()
         
         self.crear_widgets()
         self.cargar_configuracion()
-
+    
     def crear_widgets(self):
         """Crea los widgets de la ventana"""
-        
         notebook = ttk.Notebook(self.ventana)
         notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # ========== TAB 1: General ==========
-        
         tab_general = ttk.Frame(notebook, padding="15")
         notebook.add(tab_general, text="General")
         
@@ -1495,7 +1540,6 @@ class DialogoConfiguracion:
         self.label_folio.grid(row=9, column=0, sticky=tk.W, pady=5)
         
         # ========== TAB 2: Auditoría ==========
-        
         tab_auditoria = ttk.Frame(notebook, padding="15")
         notebook.add(tab_auditoria, text="Auditoría")
         
@@ -1513,13 +1557,11 @@ class DialogoConfiguracion:
         
         scrollbar = ttk.Scrollbar(tab_auditoria, orient=tk.VERTICAL, command=self.tree_auditoria.yview)
         self.tree_auditoria.configure(yscroll=scrollbar.set)
-        
         self.tree_auditoria.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
         # Cargar auditoría
         registros = obtener_auditoria(50)
-        
         for r in registros:
             self.tree_auditoria.insert('', tk.END, values=(
                 r['fecha_hora'],
@@ -1532,14 +1574,15 @@ class DialogoConfiguracion:
         frame_botones.pack(fill=tk.X, padx=10, pady=10)
         
         ttk.Button(frame_botones,
-                  text="💾 Guardar Cambios",
-                  command=self.guardar_configuracion,
-                  width=20).pack(side=tk.LEFT, padx=5)
+                   text="💾 Guardar Cambios",
+                   command=self.guardar_configuracion,
+                   width=20).pack(side=tk.LEFT, padx=5)
+        
         ttk.Button(frame_botones,
-                  text="❌ Cerrar",
-                  command=self.ventana.destroy,
-                  width=15).pack(side=tk.LEFT, padx=5)
-
+                   text="❌ Cerrar",
+                   command=self.ventana.destroy,
+                   width=15).pack(side=tk.LEFT, padx=5)
+    
     def cargar_configuracion(self):
         """Carga la configuración actual"""
         config = obtener_toda_configuracion()
@@ -1547,10 +1590,9 @@ class DialogoConfiguracion:
         self.entry_nombre_oficina.insert(0, config.get('nombre_oficina', ''))
         self.entry_ubicacion.insert(0, config.get('ubicacion', ''))
         self.entry_tarifa.insert(0, config.get('tarifa_hectarea', '450'))
-        
         self.label_ciclo.config(text=config.get('ciclo_actual', '-'))
         self.label_folio.config(text=config.get('folio_actual', '-'))
-
+    
     def guardar_configuracion(self):
         """Guarda los cambios de configuración"""
         try:
@@ -1562,17 +1604,15 @@ class DialogoConfiguracion:
                 tarifa = float(self.entry_tarifa.get().strip())
                 if tarifa <= 0:
                     raise ValueError()
-                
                 actualizar_configuracion('tarifa_hectarea', str(tarifa))
-            
             except ValueError:
                 messagebox.showwarning("Validación", "La tarifa debe ser un número mayor a 0")
                 return
             
             messagebox.showinfo("Éxito", "Configuración guardada exitosamente")
-        
         except Exception as e:
             messagebox.showerror("Error", f"Error al guardar configuración:\n{str(e)}")
+
 
 # ==================== VENTANA ADMINISTRAR DATOS ====================
 
@@ -1582,17 +1622,16 @@ class VentanaAdministrarDatos:
     def __init__(self, parent, ventana_principal):
         self.ventana = tk.Toplevel(parent)
         self.ventana.title("🔧 Administrar Datos")
-        self.ventana.geometry("800x600")
+        self.ventana.geometry("800x650")
         self.ventana.transient(parent)
         self.ventana.grab_set()
         
         self.ventana_principal = ventana_principal
         
         self.crear_widgets()
-
+    
     def crear_widgets(self):
         """Crea los widgets de la ventana"""
-        
         frame_principal = ttk.Frame(self.ventana, padding="10")
         frame_principal.pack(fill=tk.BOTH, expand=True)
         
@@ -1603,14 +1642,12 @@ class VentanaAdministrarDatos:
         ttk.Label(frame_folio, text="Nuevo Folio:").pack(side=tk.LEFT, padx=5)
         self.entry_nuevo_folio = ttk.Entry(frame_folio, width=10)
         self.entry_nuevo_folio.pack(side=tk.LEFT, padx=5)
-        
         ttk.Button(frame_folio, text="Actualizar", command=self.actualizar_folio).pack(side=tk.LEFT, padx=10)
         
         # Mostrar folio actual
         ttk.Label(frame_principal, text="Folio actual:", font=('Helvetica', 10, 'bold')).pack(pady=(10, 5))
         self.label_folio_actual = ttk.Label(frame_principal, text="", font=('Helvetica', 12))
         self.label_folio_actual.pack()
-        
         self.actualizar_label_folio()
         
         # Frame para actualizar Nombre de Oficina
@@ -1620,26 +1657,24 @@ class VentanaAdministrarDatos:
         ttk.Label(frame_nombre, text="Nuevo Nombre:").pack(side=tk.LEFT, padx=5)
         self.entry_nuevo_nombre = ttk.Entry(frame_nombre, width=60)
         self.entry_nuevo_nombre.pack(side=tk.LEFT, padx=5)
-        
         ttk.Button(frame_nombre, text="Actualizar", command=self.actualizar_nombre_oficina).pack(side=tk.LEFT, padx=10)
         
         # Mostrar nombre actual
         ttk.Label(frame_principal, text="Nombre actual:", font=('Helvetica', 10, 'bold')).pack(pady=(10, 5))
         self.label_nombre_actual = ttk.Label(frame_principal, text="", font=('Helvetica', 12))
         self.label_nombre_actual.pack()
-        
         self.cargar_nombre_actual()
-
+    
     def actualizar_label_folio(self):
         """Actualiza el label que muestra el folio actual"""
         folio = obtener_configuracion('folio_actual')
         self.label_folio_actual.config(text=folio)
-
+    
     def cargar_nombre_actual(self):
         """Carga el label que muestra el nombre actual"""
         nombre = obtener_configuracion('nombre_oficina')
         self.label_nombre_actual.config(text=nombre)
-
+    
     def actualizar_folio(self):
         """Actualiza el folio actual"""
         nuevo_folio_str = self.entry_nuevo_folio.get().strip()
@@ -1668,7 +1703,7 @@ class VentanaAdministrarDatos:
                 messagebox.showerror("Error", "No se pudo actualizar el folio")
         except Exception as e:
             messagebox.showerror("Error", f"Error al actualizar folio: {str(e)}")
-
+    
     def actualizar_nombre_oficina(self):
         """Actualiza el nombre de la oficina"""
         nuevo_nombre = self.entry_nuevo_nombre.get().strip()
