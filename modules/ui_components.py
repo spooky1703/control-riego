@@ -36,7 +36,7 @@ from modules.reports import (
 )
 
 # Lista de cultivos comunes
-CULTIVOS = ['MAÍZ', 'FRIJOL', 'TRIGO', 'SORGO', 'ALFALFA', 'CHILE', 'TOMATE', 'CEBOLLA', 'AJO', 'OTROS']
+CULTIVOS = ['MAÍZ', 'FRIJOL', 'FRIJOL EJOTERO','TRIGO', 'SORGO', 'ALFALFA', 'CHILE', 'TOMATE', 'CEBOLLA', 'AJO', 'NABO' ,'AVENA','CALABAZA','CEBADA','ARBOL FRUTAL','PASTO','BROCOLI','COLIFLOR']
 
 # ==================== VENTANA PRINCIPAL ====================
 
@@ -389,19 +389,9 @@ class VentanaPrincipal:
         VentanaEditarLote(self.root, self.campesino_seleccionado, self)
     
     def generar_reporte_dia(self):
-        """Genera el reporte del día"""
-        try:
-            recibos = obtener_recibos_dia(self.fecha_actual)
-            if not recibos:
-                messagebox.showinfo("Información", "No hay recibos para el día de hoy")
-                return
-            
-            pdf_path = generar_reporte_diario(self.fecha_actual, recibos)
-            abrir_pdf(pdf_path)
-            messagebox.showinfo("Éxito", f"Reporte generado exitosamente\n{len(recibos)} recibos")
-        except Exception as e:
-            messagebox.showerror("Error", f"Error al generar reporte:\n{str(e)}")
-    
+        """Abre el gestor de reportes"""
+        VentanaGestorReportes(self.root, self.fecha_actual)
+
     def cerrar_dia_dialog(self):
         """Diálogo para cerrar el día"""
         if messagebox.askyesno("Cerrar Día",
@@ -952,66 +942,118 @@ class VentanaAgregarRiego:
 # ==================== VENTANA REINICIAR CICLO ====================
 
 class VentanaReiniciarCiclo:
-    """Ventana para reiniciar el ciclo de folio (sin borrar usuarios)"""
+    """Ventana para gestionar ciclo y folio"""
     
     def __init__(self, parent):
         self.ventana = tk.Toplevel(parent)
-        self.ventana.title("🔄 Reiniciar Ciclo")
-        self.ventana.geometry("400x320")
+        self.ventana.title("🔄 Gestionar Ciclo y Folio")
+        self.ventana.geometry("500x450")
         self.ventana.resizable(False, False)
         self.ventana.transient(parent)
         self.ventana.grab_set()
         
-        # Frame principal
+        self.crear_widgets()
+    
+    def crear_widgets(self):
         frame_principal = ttk.Frame(self.ventana, padding="20")
         frame_principal.pack(fill=tk.BOTH, expand=True)
         
-        # Advertencia
-        ttk.Label(frame_principal, text="⚠️ REINICIAR CICLO",
-                  font=('Helvetica', 14, 'bold'), foreground='red').pack(pady=10)
+        # Título
+        ttk.Label(frame_principal, text="🔄 GESTIONAR CICLO Y FOLIO",
+                 font=('Helvetica', 14, 'bold')).pack(pady=10)
         
-        # Mensaje informativo
-        mensaje = """Esta acción:
-
-✓ Reiniciará el número de folio a 1
-✓ Actualizará el ciclo agrícola
-⚠️ NO borrará datos de campesinos
-⚠️ NO borrará datos de siembras
-
-¿Desea continuar?"""
+        # Información actual
+        info_frame = ttk.LabelFrame(frame_principal, text="📋 Información Actual", padding="10")
+        info_frame.pack(fill=tk.X, pady=10)
         
-        ttk.Label(frame_principal, text=mensaje, justify=tk.LEFT).pack(pady=15)
+        ciclo_actual = obtener_configuracion('ciclo_actual') or 'SIN CICLO'
+        folio_actual = obtener_configuracion('folio_actual') or '1'
         
-        # Nuevo ciclo
-        ttk.Label(frame_principal, text="Nuevo Ciclo:").pack(anchor="w", pady=5)
-        self.entry_ciclo = ttk.Entry(frame_principal, width=40)
-        self.entry_ciclo.pack(anchor="w", padx=10)
+        ttk.Label(info_frame, text=f"Ciclo actual: {ciclo_actual}",
+                 font=('Helvetica', 10, 'bold'), foreground='blue').pack(anchor=tk.W, pady=2)
+        ttk.Label(info_frame, text=f"Folio actual: {folio_actual}",
+                 font=('Helvetica', 10, 'bold'), foreground='blue').pack(anchor=tk.W, pady=2)
         
+        # OPCIÓN 1: Solo reiniciar folio
+        opcion1_frame = ttk.LabelFrame(frame_principal, text="📄 Opción 1: Solo Reiniciar Folio", padding="15")
+        opcion1_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(opcion1_frame, text="Reinicia el folio a 1 sin cambiar el ciclo actual",
+                 font=('Helvetica', 9), foreground='gray').pack(anchor=tk.W, pady=5)
+        
+        ttk.Button(opcion1_frame, text="🔄 Reiniciar Solo Folio a 1",
+                  command=self.reiniciar_solo_folio,
+                  width=30).pack(pady=5)
+        
+        # OPCIÓN 2: Cambiar ciclo y reiniciar folio
+        opcion2_frame = ttk.LabelFrame(frame_principal, text="🔄 Opción 2: Cambiar Ciclo y Reiniciar Folio", padding="15")
+        opcion2_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(opcion2_frame, text="Nuevo nombre del ciclo:",
+                 font=('Helvetica', 10)).pack(anchor=tk.W, pady=5)
+        
+        self.entry_ciclo = ttk.Entry(opcion2_frame, width=45)
+        self.entry_ciclo.pack(pady=5)
+        
+        # Sugerir nombre de ciclo
         ciclo_sugerido = f"CICLO {datetime.now().strftime('%B %Y').upper()}"
         self.entry_ciclo.insert(0, ciclo_sugerido)
         
-        # Frame de botones
-        frame_botones = ttk.Frame(frame_principal)
-        frame_botones.pack(fill=tk.X, pady=20)
+        ttk.Label(opcion2_frame, text="⚠️ Esto cambiará el ciclo y reiniciará el folio a 1",
+                 font=('Helvetica', 9), foreground='orange').pack(anchor=tk.W, pady=5)
         
-        ttk.Button(frame_botones, text="✅ Reiniciar", command=self.reiniciar).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame_botones, text="❌ Cancelar", command=self.ventana.destroy).pack(side=tk.LEFT, padx=5)
+        ttk.Button(opcion2_frame, text="🔄 Cambiar Ciclo y Reiniciar Folio",
+                  command=self.reiniciar_ciclo_completo,
+                  width=30).pack(pady=5)
+        
+        # Botón cerrar
+        ttk.Button(frame_principal, text="❌ Cerrar",
+                  command=self.ventana.destroy,
+                  width=15).pack(pady=10)
     
-    def reiniciar(self):
-        """Ejecuta el reinicio del ciclo"""
+    def reiniciar_solo_folio(self):
+        """Reinicia solo el folio a 1 sin cambiar el ciclo"""
+        if messagebox.askyesno("Confirmar", 
+                              "¿Reiniciar el folio a 1?\n\n"
+                              "El ciclo actual NO será modificado."):
+            try:
+                actualizar_configuracion('folio_actual', '1')
+                
+                registrar_auditoria(
+                    'FOLIO_REINICIADO',
+                    "Folio reiniciado a 1 (ciclo no modificado)",
+                    None
+                )
+                
+                messagebox.showinfo("Éxito", 
+                                  "Folio reiniciado a 1 correctamente.\n"
+                                  "El ciclo actual se mantiene sin cambios.")
+                self.ventana.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Error al reiniciar folio:\n{str(e)}")
+    
+    def reiniciar_ciclo_completo(self):
+        """Reinicia ciclo y folio"""
         nuevo_ciclo = self.entry_ciclo.get().strip()
         
         if not nuevo_ciclo:
             messagebox.showerror("Error", "Debe ingresar el nombre del nuevo ciclo")
             return
         
-        if messagebox.askyesno("Confirmar", f"¿Reiniciar ciclo a '{nuevo_ciclo}'?\n\nFolios se resetearán a 1"):
+        if messagebox.askyesno("Confirmar", 
+                              f"¿Cambiar al ciclo '{nuevo_ciclo}' y reiniciar folio a 1?\n\n"
+                              f"Esto afectará todos los recibos futuros."):
             try:
                 if reiniciar_folios_y_ciclo(nuevo_ciclo):
-                    messagebox.showinfo("Éxito", f"Ciclo reiniciado a '{nuevo_ciclo}'.\nFolios ahora en 1.\nDatos de usuarios preservados.")
+                    messagebox.showinfo("Éxito", 
+                                      f"Ciclo cambiado a '{nuevo_ciclo}'.\n"
+                                      f"Folio reiniciado a 1.\n"
+                                      f"Datos de usuarios preservados.")
                     self.ventana.destroy()
                 else:
-                    messagebox.showerror("Error", "Error al reiniciar el ciclo")
+                    messagebox.showerror("Error", "Error al cambiar el ciclo")
+                    
             except Exception as e:
                 messagebox.showerror("Error", f"Error: {str(e)}")
 
@@ -2353,3 +2395,243 @@ class VentanaEditarLote:
             self.campesino['superficie'],
             self.ventana_principal
         )
+
+class VentanaGestorReportes:
+    """Gestor de reportes - Lista, abre y genera reportes diarios"""
+    
+    def __init__(self, parent, fecha_actual):
+        self.fecha_actual = fecha_actual
+        
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title("📊 Gestor de Reportes")
+        self.ventana.geometry("900x600")
+        self.ventana.transient(parent)
+        
+        self.crear_widgets()
+        self.cargar_reportes()
+    
+    def crear_widgets(self):
+        frame = ttk.Frame(self.ventana, padding="10")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Título
+        ttk.Label(frame, text="📊 GESTOR DE REPORTES",
+                 font=('Helvetica', 14, 'bold')).pack(pady=10)
+        
+        # Frame de botones superiores
+        frame_btns_sup = ttk.Frame(frame)
+        frame_btns_sup.pack(fill=tk.X, pady=10)
+        
+        ttk.Button(frame_btns_sup, text="➕ Generar Reporte de Hoy",
+                  command=self.generar_nuevo_reporte,
+                  width=25).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(frame_btns_sup, text="🔄 Actualizar Lista",
+                  command=self.cargar_reportes,
+                  width=20).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(frame_btns_sup, text="📁 Abrir Carpeta",
+                  command=self.abrir_carpeta_reportes,
+                  width=20).pack(side=tk.LEFT, padx=5)
+        
+        # Frame de lista de reportes
+        frame_lista = ttk.LabelFrame(frame, text="Reportes Disponibles", padding="10")
+        frame_lista.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        # Tabla de reportes
+        columnas = ('fecha', 'archivo', 'tamaño', 'recibos', 'total')
+        self.tree = ttk.Treeview(frame_lista, columns=columnas, show='headings', height=15)
+        
+        self.tree.heading('fecha', text='Fecha')
+        self.tree.heading('archivo', text='Nombre del Archivo')
+        self.tree.heading('tamaño', text='Tamaño')
+        self.tree.heading('recibos', text='Recibos')
+        self.tree.heading('total', text='Total')
+        
+        self.tree.column('fecha', width=120)
+        self.tree.column('archivo', width=300)
+        self.tree.column('tamaño', width=100)
+        self.tree.column('recibos', width=80)
+        self.tree.column('total', width=120)
+        
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(frame_lista, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscroll=scrollbar.set)
+        
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Doble click para abrir
+        self.tree.bind('<Double-1>', lambda e: self.abrir_reporte())
+        
+        # Frame de botones inferiores
+        frame_btns_inf = ttk.Frame(frame)
+        frame_btns_inf.pack(fill=tk.X, pady=10)
+        
+        ttk.Button(frame_btns_inf, text="📄 Abrir PDF",
+                  command=self.abrir_reporte,
+                  width=15).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(frame_btns_inf, text="🖨️ Imprimir",
+                  command=self.imprimir_reporte,
+                  width=15).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(frame_btns_inf, text="🗑️ Eliminar",
+                  command=self.eliminar_reporte,
+                  width=15).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(frame_btns_inf, text="❌ Cerrar",
+                  command=self.ventana.destroy,
+                  width=15).pack(side=tk.RIGHT, padx=5)
+    
+    def cargar_reportes(self):
+        """Carga la lista de reportes desde el directorio"""
+        self.tree.delete(*self.tree.get_children())
+        
+        reportes_dir = os.path.join('database', 'reportes')
+        if not os.path.exists(reportes_dir):
+            return
+        
+        # Obtener todos los PDFs
+        archivos = [f for f in os.listdir(reportes_dir) if f.endswith('.pdf')]
+        archivos.sort(reverse=True)  # Más recientes primero
+        
+        for archivo in archivos:
+            ruta_completa = os.path.join(reportes_dir, archivo)
+            
+            # Obtener tamaño
+            tamaño_bytes = os.path.getsize(ruta_completa)
+            if tamaño_bytes < 1024:
+                tamaño = f"{tamaño_bytes} B"
+            elif tamaño_bytes < 1024 * 1024:
+                tamaño = f"{tamaño_bytes / 1024:.1f} KB"
+            else:
+                tamaño = f"{tamaño_bytes / (1024 * 1024):.1f} MB"
+            
+            # Extraer fecha del nombre del archivo (formato: reporte_diario_YYYYMMDD.pdf)
+            try:
+                fecha_str = archivo.replace('reporte_diario_', '').replace('.pdf', '')
+                if len(fecha_str) == 8:
+                    fecha = datetime.strptime(fecha_str, '%Y%m%d').strftime('%d/%m/%Y')
+                else:
+                    fecha = "Fecha desconocida"
+                
+                # Obtener datos del reporte (si es posible)
+                fecha_consulta = datetime.strptime(fecha_str, '%Y%m%d').strftime('%Y-%m-%d')
+                recibos = obtener_recibos_dia(fecha_consulta)
+                num_recibos = len(recibos)
+                total = sum(r['costo'] for r in recibos)
+                total_str = f"${total:,.2f}"
+            except:
+                fecha = "Desconocido"
+                num_recibos = "-"
+                total_str = "-"
+            
+            self.tree.insert('', tk.END, values=(
+                fecha,
+                archivo,
+                tamaño,
+                num_recibos,
+                total_str
+            ), tags=(ruta_completa,))
+    
+    def generar_nuevo_reporte(self):
+        """Genera un reporte del día actual"""
+        try:
+            from modules.logic import calcular_total_dia
+            from modules.reports import generar_reporte_diario
+            
+            recibos = obtener_recibos_dia(self.fecha_actual)
+            
+            if not recibos:
+                messagebox.showwarning("Sin datos", 
+                                      "No hay recibos para el día actual.\n"
+                                      "No se puede generar el reporte.")
+                return
+            
+            # Generar reporte
+            ruta_pdf = generar_reporte_diario(self.fecha_actual, recibos)
+            
+            messagebox.showinfo("Éxito", 
+                              f"Reporte generado correctamente\n\n"
+                              f"Recibos: {len(recibos)}\n"
+                              f"Total: ${calcular_total_dia(self.fecha_actual):,.2f}")
+            
+            # Recargar lista
+            self.cargar_reportes()
+            
+            # Abrir automáticamente
+            from modules.reports import abrir_pdf
+            abrir_pdf(ruta_pdf)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al generar reporte:\n{str(e)}")
+    
+    def abrir_reporte(self):
+        """Abre el reporte seleccionado"""
+        selection = self.tree.selection()
+        if not selection:
+            messagebox.showwarning("Advertencia", "Debe seleccionar un reporte")
+            return
+        
+        item = self.tree.item(selection[0])
+        ruta_pdf = item['tags'][0]
+        
+        try:
+            from modules.reports import abrir_pdf
+            abrir_pdf(ruta_pdf)
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al abrir reporte:\n{str(e)}")
+    
+    def imprimir_reporte(self):
+        """Imprime el reporte seleccionado"""
+        selection = self.tree.selection()
+        if not selection:
+            messagebox.showwarning("Advertencia", "Debe seleccionar un reporte")
+            return
+        
+        item = self.tree.item(selection[0])
+        ruta_pdf = item['tags'][0]
+        
+        if messagebox.askyesno("Confirmar", "¿Imprimir este reporte?"):
+            try:
+                from modules.reports import imprimir_recibo
+                imprimir_recibo(ruta_pdf)
+                messagebox.showinfo("Éxito", "Reporte enviado a imprimir")
+            except Exception as e:
+                messagebox.showerror("Error", f"Error al imprimir:\n{str(e)}")
+    
+    def eliminar_reporte(self):
+        """Elimina el reporte seleccionado"""
+        selection = self.tree.selection()
+        if not selection:
+            messagebox.showwarning("Advertencia", "Debe seleccionar un reporte")
+            return
+        
+        item = self.tree.item(selection[0])
+        ruta_pdf = item['tags'][0]
+        archivo = item['values'][1]
+        
+        if messagebox.askyesno("Confirmar Eliminación", 
+                              f"¿Eliminar el reporte?\n\n{archivo}\n\n"
+                              f"Esta acción no se puede deshacer."):
+            try:
+                os.remove(ruta_pdf)
+                messagebox.showinfo("Éxito", "Reporte eliminado correctamente")
+                self.cargar_reportes()
+            except Exception as e:
+                messagebox.showerror("Error", f"Error al eliminar:\n{str(e)}")
+    
+    def abrir_carpeta_reportes(self):
+        """Abre la carpeta de reportes en el explorador"""
+        reportes_dir = os.path.join('database', 'reportes')
+        
+        try:
+            if platform.system() == 'Windows':
+                os.startfile(reportes_dir)
+            elif platform.system() == 'Darwin':  # macOS
+                subprocess.run(['open', reportes_dir])
+            else:  # Linux
+                subprocess.run(['xdg-open', reportes_dir])
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al abrir carpeta:\n{str(e)}")

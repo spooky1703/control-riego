@@ -231,12 +231,13 @@ def imprimir_recibo_y_limpiar(pdf_path: str):
 # ==================== DIBUJO DE RECIBO ====================
 
 def _dibujar_recibo_principal(c, recibo: Dict, nombre_oficina: str, ubicacion: str, es_reimpresion: bool):
-    """Dibuja el recibo principal en el canvas - FORMATO VERTICAL"""
-    y_pos = RECIBO_ALTO - 1*cm
+    """Dibuja el recibo principal en el canvas - VERSIÓN CORREGIDA"""
+    
     margen_izq = 1*cm
     margen_der = RECIBO_ANCHO - 1*cm
-    margen_sup = RECIBO_ALTO - 0.5*cm  # Margen superior para el logo
-
+    margen_sup = RECIBO_ALTO - 0.5*cm
+    
+    # Marca de agua si es reimpresión
     if es_reimpresion:
         c.saveState()
         c.setFont("Helvetica-Bold", 40)
@@ -244,104 +245,104 @@ def _dibujar_recibo_principal(c, recibo: Dict, nombre_oficina: str, ubicacion: s
         c.rotate(45)
         c.drawString(5*cm, -2*cm, "REIMPRESIÓN")
         c.restoreState()
-
-    # --- Añadir Logo ---
-    logo_width = 0
+    
+    # --- Logo ---
     logo_height = 0
     if os.path.exists(LOGO_PATH):
         try:
-            # Ajusta el ancho y alto según sea necesario
             logo_width = 1.5 * cm
             logo_height = 1.5 * cm
-            # Coloca el logo en la esquina superior izquierda
-            c.drawImage(LOGO_PATH, margen_izq, margen_sup - logo_height, width=logo_width, height=logo_height, mask='auto')
+            c.drawImage(LOGO_PATH, margen_izq, margen_sup - logo_height, 
+                       width=logo_width, height=logo_height, mask='auto')
         except Exception as e:
             print(f"Error al añadir logo: {e}")
-    # --------------------
-
-    # ENCABEZADO
-    encabezado_y_pos = margen_sup - logo_height - 0.3*cm  # Espacio debajo del logo
-    c.setFont("Helvetica-Bold", 10)
-    c.drawCentredString(RECIBO_ANCHO/2, encabezado_y_pos, nombre_oficina.upper())
-    y_pos = encabezado_y_pos - 0.5*cm
-    c.line(margen_izq, y_pos, margen_der, y_pos)
-    y_pos -= 0.5*cm
-
-    # DATOS PRINCIPALES
-    c.setFont("Helvetica", 8)
-    col1_x = margen_izq
-    col2_x = RECIBO_ANCHO/2
-
+    
+    # ===== ENCABEZADO (TÍTULO CORRECTO) =====
+    y_pos = margen_sup - logo_height - 0.2*cm
+    
     c.setFont("Helvetica-Bold", 8)
+    c.drawCentredString(RECIBO_ANCHO/2, y_pos, 
+                       "ASOCIACIÓN DE CAMPESINOS DE BOMBEO Y REBOMBEO DEL CERRO DEL XICUCO A.C. M7-1")
+    y_pos -= 0.3*cm
+    
+    # Línea separadora
+    c.line(margen_izq, y_pos, margen_der, y_pos)
+    y_pos -= 0.45*cm
+    
+    # ===== DATOS PRINCIPALES (DOS COLUMNAS) =====
+    c.setFont("Helvetica-Bold", 9)
+    col1_x = margen_izq
+    col2_x = RECIBO_ANCHO/2 + 1*cm
+    
+    # Línea 1
     c.drawString(col1_x, y_pos, f"No. Recibo: {recibo['folio']}")
     c.drawString(col2_x, y_pos, f"Ciclo: {recibo['ciclo']}")
     y_pos -= 0.4*cm
-
+    
+    # Línea 2
     c.drawString(col1_x, y_pos, f"No. Lote: {recibo['numero_lote']}")
     c.drawString(col2_x, y_pos, f"Sup: {recibo['superficie']} ha")
     y_pos -= 0.4*cm
-
+    
+    # Línea 3
     c.drawString(col1_x, y_pos, f"Cultivo: {recibo['cultivo']}")
     c.drawString(col2_x, y_pos, f"Riego No.: {recibo['numero_riego']}")
     y_pos -= 0.5*cm
-
-    # RECIBÍ DE
+    
+    # ===== RECIBÍ DE =====
     c.setFont("Helvetica", 9)
     c.drawString(margen_izq, y_pos, "Recibí de:")
-    y_pos -= 0.4*cm
-
+    y_pos -= 0.45*cm
+    
     c.setFont("Helvetica-Bold", 10)
+    # Centrar el nombre con indentación
     c.drawString(margen_izq + 0.5*cm, y_pos, recibo['nombre'].upper())
     y_pos -= 0.5*cm
-
-    # LOCALIDAD Y BARRIO
+    
+    # ===== LOCALIDAD Y BARRIO =====
     c.setFont("Helvetica", 8)
     c.drawString(margen_izq, y_pos, f"Localidad: {recibo['localidad']}")
     c.drawString(col2_x, y_pos, f"Barrio: {recibo['barrio']}")
     y_pos -= 0.5*cm
-
+    
+    # Línea separadora
     c.line(margen_izq, y_pos, margen_der, y_pos)
-    y_pos -= 0.5*cm
-
-    # MONTO
+    y_pos -= 0.6*cm
+    
+    # ===== SOLO UN TOTAL (ELIMINADO EL DUPLICADO) =====
     c.setFont("Helvetica-Bold", 12)
+    c.drawString(margen_izq, y_pos, "TOTAL:")
+    
+    c.setFont("Helvetica-Bold", 14)
     monto_texto = f"${recibo['costo']:.2f}"
     c.drawRightString(margen_der, y_pos, monto_texto)
+    
     y_pos -= 0.5*cm
-
     c.line(margen_izq, y_pos, margen_der, y_pos)
-    y_pos -= 0.4*cm
-
-    # TOTAL
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(margen_izq, y_pos, "TOTAL:")
-    c.drawRightString(margen_der, y_pos, monto_texto)
-    y_pos -= 0.5*cm
-
-    c.line(margen_izq, y_pos, margen_der, y_pos)
-    y_pos -= 0.4*cm
-
-    # FECHA, HORA Y FIRMA
+    y_pos -= 0.45*cm
+    
+    # ===== FECHA, HORA Y FIRMA =====
     c.setFont("Helvetica", 7)
     fecha_obj = datetime.strptime(recibo['fecha'], '%Y-%m-%d')
     fecha_texto = f"{ubicacion} A: {fecha_obj.strftime('%d/%m/%Y')}"
-
+    
     hora_obj = datetime.strptime(recibo['hora'], '%H:%M:%S')
     am_pm = 'a.m.' if hora_obj.hour < 12 else 'p.m.'
     hora_12 = hora_obj.hour if hora_obj.hour <= 12 else hora_obj.hour - 12
     if hora_12 == 0:
         hora_12 = 12
-    hora_texto = f"{hora_12:02d}:{hora_obj.minute:02d}:{hora_obj.second:02d} {am_pm}"
-
+    hora_texto = f"Hora: {hora_12:02d}:{hora_obj.minute:02d}:{hora_obj.second:02d} {am_pm}"
+    
     c.drawString(margen_izq, y_pos, fecha_texto)
-    c.drawRightString(margen_der, y_pos, f"Hora: {hora_texto}")
-    y_pos -= 0.5*cm
-
+    c.drawRightString(margen_der, y_pos, hora_texto)
+    y_pos -= 0.4*cm
+    
     # Firma
     c.setFont("Helvetica", 8)
     c.drawRightString(margen_der, y_pos, "Firma Recaudador")
-    y_pos -= 0.3*cm
+    y_pos -= 0.25*cm
     c.line(margen_der - 4*cm, y_pos, margen_der, y_pos)
+
 
 # ==================== REPORTE DIARIO ====================
 
