@@ -4,9 +4,7 @@ from reportlab.lib.units import mm, cm
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Table, TableStyle
-
 from datetime import datetime
-
 import os
 import time
 import sys
@@ -23,9 +21,12 @@ if platform.system() == "Windows":
         print("Advertencia: pywin32 no está instalado. La impresión en Windows puede fallar. Instale con: pip install pywin32")
 
 from typing import Dict, List
-
 from modules.models import obtener_recibo_por_id, obtener_configuracion
 
+# ✅ AGREGAR ESTOS IMPORTS PARA LA FUNCIÓN DE EXCEL
+import openpyxl
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
 # ==================== CONFIGURACIÓN DE RECIBO ====================
 
 # IMPORTANTE: Recibo en formato 1/3 carta - ORIENTACIÓN VERTICAL
@@ -635,3 +636,179 @@ def exportar_a_excel(recibos: List[Dict], filename: str) -> str:
         raise ImportError("La librería 'openpyxl' no está instalada. Instálala con: pip install openpyxl")
     except Exception as e:
         raise Exception(f"Error al exportar a Excel: {e}")
+    
+def generar_corte_caja_excel(fecha: str, recibos: List[Dict]) -> str:
+    """
+    Genera un archivo Excel con el corte de caja del día.
+    
+    Args:
+        fecha: Fecha en formato YYYY-MM-DD
+        recibos: Lista de recibos del día
+    
+    Returns:
+        Ruta del archivo Excel generado
+    """
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
+    
+    # Crear directorio si no existe
+    reportes_dir = os.path.join('database', 'reportes')
+    os.makedirs(reportes_dir, exist_ok=True)
+    
+    # Nombre del archivo
+    fecha_obj = datetime.strptime(fecha, '%Y-%m-%d')
+    fecha_str = fecha_obj.strftime('%Y%m%d')
+    nombre_archivo = f"corte_caja_{fecha_str}.xlsx"
+    ruta_excel = os.path.join(reportes_dir, nombre_archivo)
+    
+    # Crear workbook
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Corte de Caja"
+    
+    # ===== ESTILOS =====
+    titulo_font = Font(name='Calibri', size=16, bold=True, color='FFFFFF')
+    titulo_fill = PatternFill(start_color='1F497D', end_color='1F497D', fill_type='solid')
+    
+    header_font = Font(name='Calibri', size=11, bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+    header_alignment = Alignment(horizontal='center', vertical='center')
+    
+    total_font = Font(name='Calibri', size=12, bold=True)
+    total_fill = PatternFill(start_color='E2EFDA', end_color='E2EFDA', fill_type='solid')
+    
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    # ===== ENCABEZADO =====
+    ws.merge_cells('A1:H1')
+    cell_titulo = ws['A1']
+    cell_titulo.value = 'CORTE DE CAJA'
+    cell_titulo.font = titulo_font
+    cell_titulo.fill = titulo_fill
+    cell_titulo.alignment = Alignment(horizontal='center', vertical='center')
+    
+    ws.merge_cells('A2:H2')
+    cell_fecha = ws['A2']
+    cell_fecha.value = f"Fecha: {fecha_obj.strftime('%d/%m/%Y')}"
+    cell_fecha.font = Font(name='Calibri', size=12, bold=True)
+    cell_fecha.alignment = Alignment(horizontal='center')
+    
+    nombre_oficina = obtener_configuracion('nombre_oficina') or 'SISTEMA DE RIEGO'
+    ws.merge_cells('A3:H3')
+    cell_oficina = ws['A3']
+    cell_oficina.value = nombre_oficina
+    cell_oficina.font = Font(name='Calibri', size=11, italic=True)
+    cell_oficina.alignment = Alignment(horizontal='center')
+    
+    # ===== CABECERAS =====
+    headers = ['Folio', 'Lote', 'Nombre', 'Cultivo', 'Superficie', 'Riego', 'Monto', 'Hora']
+    row_num = 5
+    
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=row_num, column=col_num)
+        cell.value = header
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = border
+    
+    # ===== DATOS =====
+    row_num = 6
+    total_monto = 0
+    
+    for recibo in recibos:
+        if recibo.get('eliminado'):
+            continue
+            
+        ws.cell(row=row_num, column=1, value=recibo['folio']).border = border
+        ws.cell(row=row_num, column=2, value=recibo['numero_lote']).border = border
+        ws.cell(row=row_num, column=3, value=recibo['nombre']).border = border
+        ws.cell(row=row_num, column=4, value=recibo['cultivo']).border = border
+        
+        sup_cell = ws.cell(row=row_num, column=5, value=recibo['superficie'])
+        sup_cell.border = border
+        sup_cell.alignment = Alignment(horizontal='right')
+        
+        ws.cell(row=row_num, column=6, value=recibo['numero_riego']).border = border
+        
+        monto_cell = ws.cell(row=row_num, column=7, value=recibo['costo'])
+        monto_cell.border = border
+        monto_cell.number_format = '$#,##0.00'
+        monto_cell.alignment = Alignment(horizontal='right')
+        
+        ws.cell(row=row_num, column=8, value=recibo['hora']).border = border
+        
+        total_monto += recibo['costo']
+        row_num += 1
+    
+    # ===== TOTALES =====
+    row_num += 1
+    ws.merge_cells(f'A{row_num}:F{row_num}')
+    cell_total_label = ws.cell(row=row_num, column=1)
+    cell_total_label.value = 'TOTAL DEL DÍA:'
+    cell_total_label.font = total_font
+    cell_total_label.fill = total_fill
+    cell_total_label.alignment = Alignment(horizontal='right')
+    cell_total_label.border = border
+    
+    cell_total_monto = ws.cell(row=row_num, column=7)
+    cell_total_monto.value = total_monto
+    cell_total_monto.font = total_font
+    cell_total_monto.fill = total_fill
+    cell_total_monto.number_format = '$#,##0.00'
+    cell_total_monto.alignment = Alignment(horizontal='right')
+    cell_total_monto.border = border
+    
+    ws.cell(row=row_num, column=8).border = border
+    
+    # ===== ESTADÍSTICAS =====
+    row_num += 2
+    ws.cell(row=row_num, column=1, value='ESTADÍSTICAS:').font = Font(bold=True)
+    row_num += 1
+    
+    ws.cell(row=row_num, column=1, value=f"Total de recibos:")
+    ws.cell(row=row_num, column=2, value=len([r for r in recibos if not r.get('eliminado')]))
+    row_num += 1
+    
+    # Recibos por tipo
+    nuevas_siembras = len([r for r in recibos if r['tipo_accion'] == 'Nueva siembra' and not r.get('eliminado')])
+    riegos_adicionales = len([r for r in recibos if r['tipo_accion'] == 'Riego adicional' and not r.get('eliminado')])
+    
+    ws.cell(row=row_num, column=1, value=f"Nuevas siembras:")
+    ws.cell(row=row_num, column=2, value=nuevas_siembras)
+    row_num += 1
+    
+    ws.cell(row=row_num, column=1, value=f"Riegos adicionales:")
+    ws.cell(row=row_num, column=2, value=riegos_adicionales)
+    row_num += 1
+    
+    # ===== PIE DE PÁGINA =====
+    row_num += 2
+    ws.merge_cells(f'A{row_num}:H{row_num}')
+    cell_generado = ws.cell(row=row_num, column=1)
+    cell_generado.value = f"Generado el {datetime.now().strftime('%d/%m/%Y a las %H:%M:%S')}"
+    cell_generado.font = Font(name='Calibri', size=9, italic=True, color='808080')
+    cell_generado.alignment = Alignment(horizontal='center')
+    
+    # ===== AJUSTAR ANCHOS DE COLUMNA =====
+    ws.column_dimensions['A'].width = 8
+    ws.column_dimensions['B'].width = 10
+    ws.column_dimensions['C'].width = 30
+    ws.column_dimensions['D'].width = 12
+    ws.column_dimensions['E'].width = 12
+    ws.column_dimensions['F'].width = 8
+    ws.column_dimensions['G'].width = 15
+    ws.column_dimensions['H'].width = 12
+    
+    # Guardar archivo
+    wb.save(ruta_excel)
+    
+    print(f"✅ Corte de caja Excel generado: {ruta_excel}")
+    return ruta_excel
+

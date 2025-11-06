@@ -18,10 +18,9 @@ from modules.models import (
     crear_recibo as crear_recibo_db, actualizar_recibo as actualizar_recibo_db,
     eliminar_recibo as eliminar_recibo_db, obtener_recibo_por_id,
     obtener_todos_los_recibos, obtener_todas_las_siembras, incrementar_riegos,
-    obtener_estadisticas_generales, obtener_estadisticas_por_cultivo, renombrar_campesino, partir_lote  
-
+    obtener_estadisticas_generales, obtener_estadisticas_por_cultivo,
+    registrar_auditoria  # ✅ AGREGAR ESTA LÍNEA
 )
-
 
 from modules.logic import (
     calcular_costo, validar_campesino, nueva_siembra, vender_riego,
@@ -32,7 +31,8 @@ from modules.logic import (
 
 from modules.reports import (
     generar_recibo_pdf_temporal, imprimir_recibo_y_limpiar,
-    generar_reporte_diario, abrir_pdf, exportar_a_excel, obtener_impresoras_disponibles
+    generar_reporte_diario, abrir_pdf, exportar_a_excel, obtener_impresoras_disponibles,
+    generar_corte_caja_excel  
 )
 
 # Lista de cultivos comunes
@@ -942,12 +942,12 @@ class VentanaAgregarRiego:
 # ==================== VENTANA REINICIAR CICLO ====================
 
 class VentanaReiniciarCiclo:
-    """Ventana para gestionar ciclo y folio"""
+    """Ventana para gestionar ciclo y folio - CON SCROLLBAR"""
     
     def __init__(self, parent):
         self.ventana = tk.Toplevel(parent)
         self.ventana.title("🔄 Gestionar Ciclo y Folio")
-        self.ventana.geometry("500x450")
+        self.ventana.geometry("550x500")
         self.ventana.resizable(False, False)
         self.ventana.transient(parent)
         self.ventana.grab_set()
@@ -955,7 +955,10 @@ class VentanaReiniciarCiclo:
         self.crear_widgets()
     
     def crear_widgets(self):
-        frame_principal = ttk.Frame(self.ventana, padding="20")
+        # ===== AGREGAR SCROLLBAR =====
+        canvas, scrollable_frame = crear_ventana_scrollable(self.ventana, None)
+        
+        frame_principal = ttk.Frame(scrollable_frame, padding="20")
         frame_principal.pack(fill=tk.BOTH, expand=True)
         
         # Título
@@ -983,33 +986,34 @@ class VentanaReiniciarCiclo:
         
         ttk.Button(opcion1_frame, text="🔄 Reiniciar Solo Folio a 1",
                   command=self.reiniciar_solo_folio,
-                  width=30).pack(pady=5)
+                  width=35).pack(pady=5)
         
         # OPCIÓN 2: Cambiar ciclo y reiniciar folio
         opcion2_frame = ttk.LabelFrame(frame_principal, text="🔄 Opción 2: Cambiar Ciclo y Reiniciar Folio", padding="15")
         opcion2_frame.pack(fill=tk.X, pady=10)
         
         ttk.Label(opcion2_frame, text="Nuevo nombre del ciclo:",
-                 font=('Helvetica', 10)).pack(anchor=tk.W, pady=5)
+                 font=('Helvetica', 10, 'bold')).pack(anchor=tk.W, pady=(5, 2))
         
-        self.entry_ciclo = ttk.Entry(opcion2_frame, width=45)
-        self.entry_ciclo.pack(pady=5)
+        self.entry_ciclo = ttk.Entry(opcion2_frame, width=45, font=('Helvetica', 11))
+        self.entry_ciclo.pack(pady=5, fill=tk.X)
         
         # Sugerir nombre de ciclo
+        from datetime import datetime
         ciclo_sugerido = f"CICLO {datetime.now().strftime('%B %Y').upper()}"
         self.entry_ciclo.insert(0, ciclo_sugerido)
         
-        ttk.Label(opcion2_frame, text="⚠️ Esto cambiará el ciclo y reiniciará el folio a 1",
+        ttk.Label(opcion2_frame, text="⚠️ Esto cambiará el ciclo Y reiniciará el folio a 1",
                  font=('Helvetica', 9), foreground='orange').pack(anchor=tk.W, pady=5)
         
         ttk.Button(opcion2_frame, text="🔄 Cambiar Ciclo y Reiniciar Folio",
                   command=self.reiniciar_ciclo_completo,
-                  width=30).pack(pady=5)
+                  width=35).pack(pady=10)
         
         # Botón cerrar
         ttk.Button(frame_principal, text="❌ Cerrar",
                   command=self.ventana.destroy,
-                  width=15).pack(pady=10)
+                  width=15).pack(pady=15)
     
     def reiniciar_solo_folio(self):
         """Reinicia solo el folio a 1 sin cambiar el ciclo"""
@@ -1056,7 +1060,6 @@ class VentanaReiniciarCiclo:
                     
             except Exception as e:
                 messagebox.showerror("Error", f"Error: {str(e)}")
-
 
 # ==================== VENTANA DETALLE DEL DÍA ====================
 
@@ -2422,6 +2425,11 @@ class VentanaGestorReportes:
         frame_btns_sup = ttk.Frame(frame)
         frame_btns_sup.pack(fill=tk.X, pady=10)
         
+        ttk.Button(frame_btns_sup, text="📊 Generar Corte de Caja (Excel)",
+          command=self.generar_corte_caja,
+          width=30).pack(side=tk.LEFT, padx=5)
+
+        
         ttk.Button(frame_btns_sup, text="➕ Generar Reporte de Hoy",
                   command=self.generar_nuevo_reporte,
                   width=25).pack(side=tk.LEFT, padx=5)
@@ -2493,7 +2501,7 @@ class VentanaGestorReportes:
             return
         
         # Obtener todos los PDFs
-        archivos = [f for f in os.listdir(reportes_dir) if f.endswith('.pdf')]
+        archivos = [f for f in os.listdir(reportes_dir) if f.endswith(('.pdf', '.xlsx'))]
         archivos.sort(reverse=True)  # Más recientes primero
         
         for archivo in archivos:
@@ -2567,22 +2575,71 @@ class VentanaGestorReportes:
         except Exception as e:
             messagebox.showerror("Error", f"Error al generar reporte:\n{str(e)}")
     
+    def generar_corte_caja(self):
+        """Genera corte de caja en Excel"""
+        try:
+            from modules.logic import calcular_total_dia
+            from modules.reports import generar_corte_caja_excel
+            
+            recibos = obtener_recibos_dia(self.fecha_actual)
+            
+            if not recibos:
+                messagebox.showwarning("Sin datos", 
+                                    "No hay recibos para el día actual.\n"
+                                    "No se puede generar el corte de caja.")
+                return
+            
+            # Generar Excel
+            ruta_excel = generar_corte_caja_excel(self.fecha_actual, recibos)
+            
+            messagebox.showinfo("Éxito", 
+                            f"Corte de caja generado correctamente\n\n"
+                            f"Recibos: {len(recibos)}\n"
+                            f"Total: ${calcular_total_dia(self.fecha_actual):,.2f}\n\n"
+                            f"Archivo: {os.path.basename(ruta_excel)}")
+            
+            # Recargar lista
+            self.cargar_reportes()
+            
+            # Abrir automáticamente
+            self.abrir_archivo(ruta_excel)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al generar corte de caja:\n{str(e)}")
+
+    
+    ####
     def abrir_reporte(self):
-        """Abre el reporte seleccionado"""
+        """Abre el archivo seleccionado (PDF o Excel)"""
         selection = self.tree.selection()
         if not selection:
-            messagebox.showwarning("Advertencia", "Debe seleccionar un reporte")
+            messagebox.showwarning("Advertencia", "Debe seleccionar un archivo")
             return
         
         item = self.tree.item(selection[0])
-        ruta_pdf = item['tags'][0]
+        ruta_archivo = item['tags'][0]
         
         try:
-            from modules.reports import abrir_pdf
-            abrir_pdf(ruta_pdf)
+            self.abrir_archivo(ruta_archivo)
         except Exception as e:
-            messagebox.showerror("Error", f"Error al abrir reporte:\n{str(e)}")
+            messagebox.showerror("Error", f"Error al abrir archivo:\n{str(e)}")
+
+    def abrir_archivo(self, ruta):
+        """Abre un archivo con la aplicación predeterminada del sistema"""
+        try:
+            if platform.system() == 'Windows':
+                os.startfile(ruta)
+            elif platform.system() == 'Darwin':  # macOS
+                import subprocess
+                subprocess.run(['open', ruta])
+            else:  # Linux
+                import subprocess
+                subprocess.run(['xdg-open', ruta])
+        except Exception as e:
+            raise Exception(f"No se pudo abrir el archivo: {str(e)}")
+
     
+    ####
     def imprimir_reporte(self):
         """Imprime el reporte seleccionado"""
         selection = self.tree.selection()
