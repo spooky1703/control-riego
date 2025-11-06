@@ -959,3 +959,52 @@ def renombrar_campesino(campesino_id: int, nuevo_nombre: str) -> bool:
     finally:
         conn.close()
 
+def actualizar_superficie_campesino(campesino_id: int, nueva_superficie: float) -> bool:
+    """
+    Actualiza la superficie de un campesino.
+    
+    Args:
+        campesino_id: ID del campesino
+        nueva_superficie: Nueva superficie en hectáreas
+    
+    Returns:
+        True si se actualizó correctamente
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Obtener datos anteriores
+        cursor.execute("SELECT nombre, numero_lote, superficie FROM campesinos WHERE id = ?", (campesino_id,))
+        row = cursor.fetchone()
+        
+        if not row:
+            raise ValueError("Campesino no encontrado")
+        
+        nombre = row[0]
+        numero_lote = row[1]
+        superficie_anterior = row[2]
+        
+        # Actualizar superficie
+        cursor.execute("""
+            UPDATE campesinos 
+            SET superficie = ?
+            WHERE id = ?
+        """, (nueva_superficie, campesino_id))
+        
+        conn.commit()
+        
+        # Registrar en auditoría
+        registrar_auditoria(
+            'SUPERFICIE_ACTUALIZADA',
+            f"Lote {numero_lote} ({nombre}): {superficie_anterior} ha → {nueva_superficie} ha",
+            campesino_id
+        )
+        
+        return True
+        
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()

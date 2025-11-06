@@ -19,7 +19,7 @@ from modules.models import (
     eliminar_recibo as eliminar_recibo_db, obtener_recibo_por_id,
     obtener_todos_los_recibos, obtener_todas_las_siembras, incrementar_riegos,
     obtener_estadisticas_generales, obtener_estadisticas_por_cultivo,
-    registrar_auditoria  # ✅ AGREGAR ESTA LÍNEA
+    registrar_auditoria, actualizar_superficie_campesino
 )
 
 from modules.logic import (
@@ -2314,7 +2314,7 @@ class VentanaPartirLote:
 
 
 class VentanaEditarLote:
-    """Ventana de opciones para editar un lote (renombrar o partir)"""
+    """Ventana de opciones para editar un lote (renombrar, partir o cambiar superficie)"""
     
     def __init__(self, parent, campesino, ventana_principal):
         self.campesino = campesino
@@ -2322,7 +2322,7 @@ class VentanaEditarLote:
         
         self.ventana = tk.Toplevel(parent)
         self.ventana.title(f"✏️ Editar Lote {campesino['numero_lote']}")
-        self.ventana.geometry("500x350")
+        self.ventana.geometry("520x450")
         self.ventana.transient(parent)
         self.ventana.grab_set()
         
@@ -2350,7 +2350,7 @@ class VentanaEditarLote:
                  font=('Helvetica', 10)).pack(anchor=tk.W, pady=2)
         
         # Opciones
-        opciones_frame = ttk.LabelFrame(frame, text="Opciones", padding="15")
+        opciones_frame = ttk.LabelFrame(frame, text="Opciones de Edición", padding="15")
         opciones_frame.pack(fill=tk.BOTH, expand=True, pady=10)
         
         # Botón renombrar
@@ -2359,6 +2359,17 @@ class VentanaEditarLote:
                                    command=self.renombrar)
         btn_renombrar.pack(fill=tk.X, pady=5)
         ttk.Label(opciones_frame, text="Cambiar el nombre del dueño del lote",
+                 font=('Helvetica', 9), foreground='gray').pack(anchor=tk.W, padx=20)
+        
+        # Separador
+        ttk.Separator(opciones_frame, orient='horizontal').pack(fill=tk.X, pady=10)
+        
+        # Botón editar superficie
+        btn_superficie = ttk.Button(opciones_frame,
+                                    text="📐 Editar Superficie",
+                                    command=self.editar_superficie)
+        btn_superficie.pack(fill=tk.X, pady=5)
+        ttk.Label(opciones_frame, text="Modificar el tamaño de la parcela en hectáreas",
                  font=('Helvetica', 9), foreground='gray').pack(anchor=tk.W, padx=20)
         
         # Separador
@@ -2387,6 +2398,18 @@ class VentanaEditarLote:
             self.ventana_principal
         )
     
+    def editar_superficie(self):
+        """Abre ventana para editar superficie"""
+        self.ventana.destroy()
+        VentanaEditarSuperficie(
+            self.ventana.master,
+            self.campesino['id'],
+            self.campesino['nombre'],
+            self.campesino['numero_lote'],
+            self.campesino['superficie'],
+            self.ventana_principal
+        )
+    
     def partir(self):
         """Abre ventana para partir lote"""
         self.ventana.destroy()
@@ -2399,6 +2422,103 @@ class VentanaEditarLote:
             self.ventana_principal
         )
 
+##
+class VentanaEditarSuperficie:
+    """Ventana para editar la superficie de un lote"""
+    
+    def __init__(self, parent, campesino_id, campesino_nombre, lote, superficie_actual, ventana_principal):
+        self.campesino_id = campesino_id
+        self.nombre = campesino_nombre
+        self.lote = lote
+        self.superficie_actual = superficie_actual
+        self.ventana_principal = ventana_principal
+        
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title(f"📐 Editar Superficie - Lote {lote}")
+        self.ventana.geometry("450x280")
+        self.ventana.transient(parent)
+        self.ventana.grab_set()
+        
+        self.crear_widgets()
+    
+    def crear_widgets(self):
+        frame = ttk.Frame(self.ventana, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(frame, text=f"📐 EDITAR SUPERFICIE - LOTE {self.lote}", 
+                 font=('Helvetica', 12, 'bold')).pack(pady=10)
+        
+        # Info actual
+        info_frame = ttk.LabelFrame(frame, text="Información Actual", padding="10")
+        info_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(info_frame, text=f"Dueño: {self.nombre}",
+                 font=('Helvetica', 10)).pack(anchor=tk.W, pady=2)
+        ttk.Label(info_frame, text=f"Superficie actual: {self.superficie_actual} hectáreas",
+                 font=('Helvetica', 10, 'bold'), foreground='blue').pack(anchor=tk.W, pady=2)
+        
+        # Nuevo valor
+        ttk.Label(frame, text="Nueva superficie (hectáreas):",
+                 font=('Helvetica', 10)).pack(pady=(15, 5))
+        
+        self.entry_superficie = ttk.Entry(frame, width=20, font=('Helvetica', 12))
+        self.entry_superficie.pack(pady=5)
+        self.entry_superficie.insert(0, str(self.superficie_actual))
+        self.entry_superficie.select_range(0, tk.END)
+        self.entry_superficie.focus()
+        
+        # Advertencia
+        ttk.Label(frame, text="⚠️ Esto actualizará el tamaño de la parcela permanentemente",
+                 font=('Helvetica', 9), foreground='orange').pack(pady=10)
+        
+        # Botones
+        frame_botones = ttk.Frame(frame)
+        frame_botones.pack(pady=15)
+        
+        ttk.Button(frame_botones, text="✅ Actualizar",
+                  command=self.guardar).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="❌ Cancelar",
+                  command=self.ventana.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def guardar(self):
+        nueva_superficie_str = self.entry_superficie.get().strip()
+        
+        if not nueva_superficie_str:
+            messagebox.showwarning("Advertencia", "Debe ingresar una superficie")
+            return
+        
+        try:
+            nueva_superficie = float(nueva_superficie_str)
+            
+            if nueva_superficie <= 0:
+                messagebox.showerror("Error", "La superficie debe ser mayor a 0")
+                return
+            
+            if nueva_superficie == self.superficie_actual:
+                messagebox.showinfo("Sin cambios", "La superficie no ha cambiado")
+                return
+            
+            if messagebox.askyesno("Confirmar",
+                                  f"¿Actualizar superficie del lote {self.lote}?\n\n"
+                                  f"Superficie actual: {self.superficie_actual} ha\n"
+                                  f"Nueva superficie: {nueva_superficie} ha"):
+                
+                actualizar_superficie_campesino(self.campesino_id, nueva_superficie)
+                
+                messagebox.showinfo("Éxito", 
+                                  f"Superficie actualizada correctamente\n\n"
+                                  f"{self.superficie_actual} ha → {nueva_superficie} ha")
+                
+                # Actualizar UI
+                self.ventana_principal.cargar_todos_campesinos()
+                self.ventana.destroy()
+                
+        except ValueError:
+            messagebox.showerror("Error", "Debe ingresar un número válido")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al actualizar:\n{str(e)}")
+
+##
 class VentanaGestorReportes:
     """Gestor de reportes - Lista, abre y genera reportes diarios"""
     
