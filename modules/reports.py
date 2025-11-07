@@ -232,118 +232,141 @@ def imprimir_recibo_y_limpiar(pdf_path: str):
 # ==================== DIBUJO DE RECIBO ====================
 
 def _dibujar_recibo_principal(c, recibo: Dict, nombre_oficina: str, ubicacion: str, es_reimpresion: bool):
-    """Dibuja el recibo principal en el canvas - VERSIÓN CORREGIDA"""
-    
-    margen_izq = 1*cm
-    margen_der = RECIBO_ANCHO - 1*cm
-    margen_sup = RECIBO_ALTO - 0.5*cm
-    
-    # Marca de agua si es reimpresión
+    """Dibuja el recibo principal en el canvas - VERSIÓN AJUSTADA CON BLOQUE DE ENCABEZADO COMPACTO"""
+
+    # Mantener medidas originales
+    margen_izq = 1 * cm
+    margen_der = RECIBO_ANCHO - 1 * cm
+    margen_sup = RECIBO_ALTO - 0.6 * cm  # un poco menos margen arriba
+
+    # ===== MARCA DE AGUA =====
     if es_reimpresion:
         c.saveState()
         c.setFont("Helvetica-Bold", 40)
         c.setFillColorRGB(0.9, 0.9, 0.9)
         c.rotate(45)
-        c.drawString(5*cm, -2*cm, "REIMPRESIÓN")
+        c.drawString(5 * cm, -2 * cm, "REIMPRESIÓN")
         c.restoreState()
-    
-    # --- Logo ---
-    logo_height = 0
+
+    # ===== BLOQUE DE ENCABEZADO (LOGO + TÍTULO + RFC) =====
+    bloque_altura = 2.0 * cm  # altura total del encabezado
+    bloque_y_sup = margen_sup
+    bloque_y_inf = bloque_y_sup - bloque_altura
+
+    # Logo dentro del bloque, alineado al texto
+    logo_height = 1.3 * cm
+    logo_width = 1.3 * cm
+    logo_y = bloque_y_inf + 0.35 * cm  # más abajo para pegarlo a la línea inferior
     if os.path.exists(LOGO_PATH):
         try:
-            logo_width = 1.5 * cm
-            logo_height = 1.5 * cm
-            c.drawImage(LOGO_PATH, margen_izq, margen_sup - logo_height, 
-                       width=logo_width, height=logo_height, mask='auto')
+            c.drawImage(LOGO_PATH, margen_izq, logo_y, width=logo_width, height=logo_height, mask='auto')
         except Exception as e:
             print(f"Error al añadir logo: {e}")
-    
-    # ===== ENCABEZADO (TÍTULO CORRECTO) =====
-    y_pos = margen_sup - logo_height - 0.2*cm
-    
+
+    # Texto centrado en el bloque
+    texto_centro_y = bloque_y_sup - 0.7 * cm
+    c.setFont("Helvetica-Bold", 8.5)
+    c.drawCentredString(RECIBO_ANCHO / 2, texto_centro_y + 0.25 * cm,
+                       "ASOCIACIÓN DE CAMPESINOS DE BOMBEO Y REBOMBEO")
+    c.drawCentredString(RECIBO_ANCHO / 2, texto_centro_y - 0.05 * cm,
+                       "DEL CERRO DEL XICUCO A.C. M7-1")
+
+    c.setFont("Helvetica", 7)
+    c.drawCentredString(RECIBO_ANCHO / 2, texto_centro_y - 0.45 * cm, "RFC: ACB030619G68")
+
+    # ===== LÍNEA SEPARADORA =====
+    c.line(margen_izq, bloque_y_inf, margen_der, bloque_y_inf)
+
+    # ===== DATOS PRINCIPALES =====
+    y_pos = bloque_y_inf - 0.4 * cm
     c.setFont("Helvetica-Bold", 8)
-    c.drawCentredString(RECIBO_ANCHO/2, y_pos, 
-                       "ASOCIACIÓN DE CAMPESINOS DE BOMBEO Y REBOMBEO DEL CERRO DEL XICUCO A.C. M7-1")
-    y_pos -= 0.3*cm
-    
-    # Línea separadora
-    c.line(margen_izq, y_pos, margen_der, y_pos)
-    y_pos -= 0.45*cm
-    
-    # ===== DATOS PRINCIPALES (DOS COLUMNAS) =====
-    c.setFont("Helvetica-Bold", 9)
+
     col1_x = margen_izq
-    col2_x = RECIBO_ANCHO/2 + 1*cm
-    
-    # Línea 1
-    c.drawString(col1_x, y_pos, f"No. Recibo: {recibo['folio']}")
-    c.drawString(col2_x, y_pos, f"Ciclo: {recibo['ciclo']}")
-    y_pos -= 0.4*cm
-    
-    # Línea 2
-    c.drawString(col1_x, y_pos, f"No. Lote: {recibo['numero_lote']}")
-    c.drawString(col2_x, y_pos, f"Sup: {recibo['superficie']} ha")
-    y_pos -= 0.4*cm
-    
-    # Línea 3
+    col2_x = margen_izq + 6.5 * cm
+    col3_x = margen_izq + 13 * cm
+
+    c.drawString(col1_x, y_pos, f"NO. RECIBO: {recibo['folio']}")
+    c.drawString(col2_x, y_pos, f"No. Lote: {recibo['numero_lote']}")
+    c.drawString(col3_x, y_pos, f"No. Riego: {recibo['numero_riego']}")
+    y_pos -= 0.4 * cm
+
     c.drawString(col1_x, y_pos, f"Cultivo: {recibo['cultivo']}")
-    c.drawString(col2_x, y_pos, f"Riego No.: {recibo['numero_riego']}")
-    y_pos -= 0.5*cm
-    
+    c.drawString(col2_x, y_pos, f"Superficie: {recibo['superficie']} ha")
+    c.drawString(col3_x, y_pos, f"Ciclo: {recibo['ciclo']}")
+    y_pos -= 0.4 * cm
+
+    c.drawString(col1_x, y_pos, f"Barrio: {recibo['barrio']}")
+    y_pos -= 0.5 * cm
+
     # ===== RECIBÍ DE =====
     c.setFont("Helvetica", 9)
     c.drawString(margen_izq, y_pos, "Recibí de:")
-    y_pos -= 0.45*cm
-    
+    y_pos -= 0.35 * cm
+
     c.setFont("Helvetica-Bold", 10)
-    # Centrar el nombre con indentación
-    c.drawString(margen_izq + 0.5*cm, y_pos, recibo['nombre'].upper())
-    y_pos -= 0.5*cm
-    
-    # ===== LOCALIDAD Y BARRIO =====
-    c.setFont("Helvetica", 8)
-    c.drawString(margen_izq, y_pos, f"Localidad: {recibo['localidad']}")
-    c.drawString(col2_x, y_pos, f"Barrio: {recibo['barrio']}")
-    y_pos -= 0.5*cm
-    
-    # Línea separadora
+    c.drawString(margen_izq + 0.5 * cm, y_pos, recibo['nombre'].upper())
+    y_pos -= 0.45 * cm
+
+    # ===== LÍNEA SEPARADORA =====
     c.line(margen_izq, y_pos, margen_der, y_pos)
-    y_pos -= 0.6*cm
-    
-    # ===== SOLO UN TOTAL (ELIMINADO EL DUPLICADO) =====
+    y_pos -= 0.35 * cm
+
+    # ===== CONCEPTO =====
+    c.setFont("Helvetica", 7)
+    c.drawString(margen_izq, y_pos, "Concepto: Pago de cuota de riego para el ciclo agrícola")
+    y_pos -= 0.45 * cm
+
+    # ===== TOTAL =====
     c.setFont("Helvetica-Bold", 12)
-    c.drawString(margen_izq, y_pos, "TOTAL:")
-    
-    c.setFont("Helvetica-Bold", 14)
+    c.drawString(margen_izq, y_pos, "TOTAL")
+
     monto_texto = f"${recibo['costo']:.2f}"
-    c.drawRightString(margen_der, y_pos, monto_texto)
-    
-    y_pos -= 0.5*cm
+    c.setFont("Helvetica-Bold", 14)
+    monto_width = c.stringWidth(monto_texto, "Helvetica-Bold", 14)
+    c.drawString(margen_der - monto_width, y_pos, monto_texto)
+
+    c.setFont("Helvetica", 7)
+    efectivo_texto = "(pago en efectivo)"
+    c.drawString(margen_der - monto_width - c.stringWidth(efectivo_texto, "Helvetica", 7) - 0.2 * cm,
+                y_pos + 0.05 * cm, efectivo_texto)
+    y_pos -= 0.4 * cm
+
+    # ===== LÍNEA SEPARADORA =====
     c.line(margen_izq, y_pos, margen_der, y_pos)
-    y_pos -= 0.45*cm
-    
-    # ===== FECHA, HORA Y FIRMA =====
+    y_pos -= 0.45 * cm
+
+    # ===== FECHA Y HORA =====
     c.setFont("Helvetica", 7)
     fecha_obj = datetime.strptime(recibo['fecha'], '%Y-%m-%d')
-    fecha_texto = f"{ubicacion} A: {fecha_obj.strftime('%d/%m/%Y')}"
-    
+    fecha_texto = f"C. Juan Aldama #25, Col. Centro, Tezontepec de Aldama. Fecha: {fecha_obj.strftime('%d/%m/%Y')}"
     hora_obj = datetime.strptime(recibo['hora'], '%H:%M:%S')
-    am_pm = 'a.m.' if hora_obj.hour < 12 else 'p.m.'
+    am_pm = "a.m." if hora_obj.hour < 12 else "p.m."
     hora_12 = hora_obj.hour if hora_obj.hour <= 12 else hora_obj.hour - 12
     if hora_12 == 0:
         hora_12 = 12
     hora_texto = f"Hora: {hora_12:02d}:{hora_obj.minute:02d}:{hora_obj.second:02d} {am_pm}"
-    
     c.drawString(margen_izq, y_pos, fecha_texto)
-    c.drawRightString(margen_der, y_pos, hora_texto)
-    y_pos -= 0.4*cm
-    
-    # Firma
+    y_pos -= 0.3 * cm
+    c.drawString(margen_izq, y_pos, hora_texto)
+    y_pos -= 0.45 * cm
+
+    # ===== FIRMA =====
     c.setFont("Helvetica", 8)
     c.drawRightString(margen_der, y_pos, "Firma Recaudador")
-    y_pos -= 0.25*cm
-    c.line(margen_der - 4*cm, y_pos, margen_der, y_pos)
+    y_pos -= 0.2 * cm
+    c.line(margen_der - 4 * cm, y_pos, margen_der, y_pos)
+    y_pos -= 0.35 * cm
 
+    # ===== LEYENDA FISCAL =====
+    c.setFont("Helvetica", 6)
+    leyenda = [
+        "Este recibo ampara el pago de cuota ordinaria destinada exclusivamente al mantenimiento y operación del módulo de riego,",
+        "conforme al régimen fiscal de personas morales con fines no lucrativos. Exento de IVA y de ISR conforme a los artículos 79",
+        "y 80 de la Ley del ISR y al artículo 15, fracción XII de la Ley del IVA."
+    ]
+    for linea in leyenda:
+        c.drawString(margen_izq, y_pos, linea)
+        y_pos -= 0.22 * cm
 
 # ==================== REPORTE DIARIO ====================
 
@@ -812,3 +835,270 @@ def generar_corte_caja_excel(fecha: str, recibos: List[Dict]) -> str:
     print(f"✅ Corte de caja Excel generado: {ruta_excel}")
     return ruta_excel
 
+def generar_pdf_estadisticas(estadisticas: Dict, estadisticas_cultivo: List[Dict]) -> str:
+    """
+    Genera un PDF profesional con las estadísticas del sistema.
+    
+    Args:
+        estadisticas: Diccionario con estadísticas generales
+        estadisticas_cultivo: Lista de estadísticas por cultivo
+    
+    Returns:
+        Ruta del archivo PDF generado
+    """
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.pdfgen import canvas as pdf_canvas
+    from reportlab.platypus import Table, TableStyle
+    
+    # Crear directorio si no existe
+    reportes_dir = os.path.join('database', 'reportes')
+    os.makedirs(reportes_dir, exist_ok=True)
+    
+    # Nombre del archivo
+    fecha_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+    nombre_archivo = f"estadisticas_{fecha_str}.pdf"
+    ruta_pdf = os.path.join(reportes_dir, nombre_archivo)
+    
+    # Crear PDF
+    c = pdf_canvas.Canvas(ruta_pdf, pagesize=letter)
+    ancho, alto = letter
+    
+    # ===== ENCABEZADO =====
+    y_pos = alto - 2*cm
+    
+    # Logo si existe
+    if os.path.exists(LOGO_PATH):
+        try:
+            c.drawImage(LOGO_PATH, 2*cm, y_pos - 1.5*cm, width=2*cm, height=2*cm, mask='auto')
+        except:
+            pass
+    
+    # Título
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(5*cm, y_pos, "ESTADÍSTICAS DEL SISTEMA")
+    y_pos -= 0.5*cm
+    
+    nombre_oficina = obtener_configuracion('nombre_oficina') or 'SISTEMA DE RIEGO'
+    c.setFont("Helvetica", 12)
+    c.drawString(5*cm, y_pos, nombre_oficina)
+    y_pos -= 0.4*cm
+    
+    c.setFont("Helvetica", 10)
+    c.drawString(5*cm, y_pos, f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+    y_pos -= 1*cm
+    
+    # Línea separadora
+    c.line(2*cm, y_pos, ancho - 2*cm, y_pos)
+    y_pos -= 1*cm
+    
+    # ===== ESTADÍSTICAS GENERALES =====
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(2*cm, y_pos, "📊 ESTADÍSTICAS GENERALES")
+    y_pos -= 0.7*cm
+    
+    # Crear tabla de estadísticas generales
+    datos_generales = [
+        ['Indicador', 'Valor'],
+        ['Total de Campesinos', str(estadisticas.get('total_campesinos', 0))],
+        ['Total de Lotes', str(estadisticas.get('total_lotes', 0))],
+        ['Superficie Total', f"{estadisticas.get('superficie_total', 0):.2f} ha"],
+        ['Siembras Activas', str(estadisticas.get('siembras_activas', 0))],
+        ['Total de Recibos', str(estadisticas.get('total_recibos', 0))],
+        ['Ingresos Totales', f"${estadisticas.get('ingresos_totales', 0):,.2f}"],
+    ]
+    
+    tabla_general = Table(datos_generales, colWidths=[8*cm, 6*cm])
+    tabla_general.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 11),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 10),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F0F0F0')]),
+    ]))
+    
+    tabla_general.wrapOn(c, ancho, alto)
+    tabla_general.drawOn(c, 2*cm, y_pos - 4*cm)
+    y_pos -= 5*cm
+    
+    # ===== ESTADÍSTICAS POR CULTIVO =====
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(2*cm, y_pos, "🌱 ESTADÍSTICAS POR CULTIVO")
+    y_pos -= 0.7*cm
+    
+    if estadisticas_cultivo:
+        datos_cultivos = [['Cultivo', 'Siembras', 'Superficie (ha)', 'Recibos', 'Ingresos']]
+        
+        for cultivo in estadisticas_cultivo:
+            datos_cultivos.append([
+                cultivo['cultivo'],
+                str(cultivo['num_siembras']),
+                f"{cultivo['superficie_total']:.2f}",
+                str(cultivo['num_recibos']),
+                f"${cultivo['ingresos_totales']:,.2f}"
+            ])
+        
+        tabla_cultivos = Table(datos_cultivos, colWidths=[3.5*cm, 2.5*cm, 3*cm, 2.5*cm, 3.5*cm])
+        tabla_cultivos.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#70AD47')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#E8F5E9')]),
+        ]))
+        
+        altura_tabla = len(datos_cultivos) * 0.6 * cm
+        tabla_cultivos.wrapOn(c, ancho, alto)
+        tabla_cultivos.drawOn(c, 2*cm, y_pos - altura_tabla)
+        y_pos -= altura_tabla + 1*cm
+    
+    # ===== PIE DE PÁGINA =====
+    c.setFont("Helvetica-Oblique", 8)
+    c.setFillColor(colors.grey)
+    c.drawCentredString(ancho/2, 1.5*cm, f"Página 1 - Generado el {datetime.now().strftime('%d/%m/%Y a las %H:%M:%S')}")
+    
+    c.save()
+    
+    print(f"✅ PDF de estadísticas generado: {ruta_pdf}")
+    return ruta_pdf
+
+
+def generar_pdf_auditoria(registros_auditoria: List[Dict], fecha_inicio=None, fecha_fin=None) -> str:
+    """
+    Genera un PDF profesional con el historial de auditoría.
+    
+    Args:
+        registros_auditoria: Lista de registros de auditoría
+        fecha_inicio: Fecha de inicio del rango (opcional)
+        fecha_fin: Fecha de fin del rango (opcional)
+    
+    Returns:
+        Ruta del archivo PDF generado
+    """
+    from reportlab.lib.pagesizes import letter, landscape
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.pdfgen import canvas as pdf_canvas
+    from reportlab.platypus import Table, TableStyle, PageBreak
+    
+    # Crear directorio si no existe
+    reportes_dir = os.path.join('database', 'reportes')
+    os.makedirs(reportes_dir, exist_ok=True)
+    
+    # Nombre del archivo
+    fecha_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+    nombre_archivo = f"auditoria_{fecha_str}.pdf"
+    ruta_pdf = os.path.join(reportes_dir, nombre_archivo)
+    
+    # Usar orientación horizontal para más espacio
+    c = pdf_canvas.Canvas(ruta_pdf, pagesize=landscape(letter))
+    ancho, alto = landscape(letter)
+    
+    # ===== FUNCIÓN PARA DIBUJAR ENCABEZADO =====
+    def dibujar_encabezado(c, y_pos):
+        # Logo si existe
+        if os.path.exists(LOGO_PATH):
+            try:
+                c.drawImage(LOGO_PATH, 2*cm, y_pos - 1.5*cm, width=1.5*cm, height=1.5*cm, mask='auto')
+            except:
+                pass
+        
+        # Título
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(4.5*cm, y_pos, "REGISTRO DE AUDITORÍA")
+        y_pos -= 0.5*cm
+        
+        nombre_oficina = obtener_configuracion('nombre_oficina') or 'SISTEMA DE RIEGO'
+        c.setFont("Helvetica", 10)
+        c.drawString(4.5*cm, y_pos, nombre_oficina)
+        y_pos -= 0.3*cm
+        
+        if fecha_inicio and fecha_fin:
+            c.drawString(4.5*cm, y_pos, f"Período: {fecha_inicio} - {fecha_fin}")
+            y_pos -= 0.3*cm
+        
+        c.setFont("Helvetica", 9)
+        c.drawString(4.5*cm, y_pos, f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+        y_pos -= 0.5*cm
+        
+        c.line(2*cm, y_pos, ancho - 2*cm, y_pos)
+        y_pos -= 0.5*cm
+        
+        return y_pos
+    
+    # Primera página
+    pagina = 1
+    y_pos = alto - 1.5*cm
+    y_pos = dibujar_encabezado(c, y_pos)
+    
+    # ===== RESUMEN =====
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2*cm, y_pos, f"📋 RESUMEN: {len(registros_auditoria)} registros totales")
+    y_pos -= 1*cm
+    
+    # ===== TABLA DE REGISTROS =====
+    registros_por_pagina = 20
+    
+    for i in range(0, len(registros_auditoria), registros_por_pagina):
+        if i > 0:
+            # Nueva página
+            c.showPage()
+            pagina += 1
+            y_pos = alto - 1.5*cm
+            y_pos = dibujar_encabezado(c, y_pos)
+        
+        chunk = registros_auditoria[i:i+registros_por_pagina]
+        
+        datos_tabla = [['Fecha/Hora', 'Tipo', 'Descripción', 'Usuario/Lote']]
+        
+        for reg in chunk:
+            fecha_hora = f"{reg['fecha']} {reg['hora']}"
+            tipo = reg['tipo_accion']
+            descripcion = reg['descripcion'][:50] + '...' if len(reg['descripcion']) > 50 else reg['descripcion']
+            usuario = f"ID: {reg['campesino_id']}" if reg['campesino_id'] else '-'
+            
+            datos_tabla.append([fecha_hora, tipo, descripcion, usuario])
+        
+        tabla = Table(datos_tabla, colWidths=[4.5*cm, 4*cm, 10*cm, 3*cm])
+        tabla.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1F497D')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')]),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+        
+        altura_tabla = (len(datos_tabla) + 1) * 0.5 * cm
+        tabla.wrapOn(c, ancho, alto)
+        tabla.drawOn(c, 2*cm, y_pos - altura_tabla)
+        
+        # Pie de página
+        c.setFont("Helvetica-Oblique", 8)
+        c.setFillColor(colors.grey)
+        c.drawCentredString(ancho/2, 1*cm, f"Página {pagina} - Generado el {datetime.now().strftime('%d/%m/%Y a las %H:%M:%S')}")
+        c.setFillColor(colors.black)
+    
+    c.save()
+    
+    print(f"✅ PDF de auditoría generado: {ruta_pdf}")
+    return ruta_pdf

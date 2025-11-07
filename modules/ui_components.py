@@ -1897,6 +1897,7 @@ class VentanaEstadisticas:
         frame_resumen = ttk.LabelFrame(frame_principal, text="📈 Resumen General", padding="15")
         frame_resumen.pack(fill=tk.X, pady=10)
         
+        
         # Grid de estadísticas principales
         stats_grid = ttk.Frame(frame_resumen)
         stats_grid.pack(fill=tk.X)
@@ -1966,6 +1967,16 @@ class VentanaEstadisticas:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
         self.cargar_tabla_cultivos()
+        
+         # ===== BOTONES DE ACCIÓN ===== 
+        frame_botones = ttk.Frame(frame_principal)
+        frame_botones.pack(pady=15)
+        
+        ttk.Button(frame_botones, text="📄 Exportar PDF",
+                  command=self.exportar_pdf).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(frame_botones, text="❌ Cerrar",
+                  command=self.ventana.destroy).pack(side=tk.LEFT, padx=5)
     
     def _crear_stat_card(self, parent, row, col, titulo, valor, color):
         """Crea una tarjeta de estadística"""
@@ -2069,6 +2080,39 @@ class VentanaEstadisticas:
         self.stats = obtener_estadisticas_generales()
         self.ventana.destroy()
         VentanaEstadisticas(self.ventana.master)
+
+    def exportar_pdf(self):
+        """Exporta estadísticas a PDF"""
+        try:
+            from modules.reports import generar_pdf_estadisticas
+            from modules.models import obtener_estadisticas_generales
+            
+            # Obtener estadísticas generales
+            estadisticas = obtener_estadisticas_generales()
+            
+            # Construir lista de estadísticas por cultivo desde los datos que ya tenemos
+            estadisticas_cultivo = []
+            
+            for cultivo in estadisticas['hectareas_por_cultivo'].keys():
+                estadisticas_cultivo.append({
+                    'cultivo': cultivo,
+                    'num_siembras': estadisticas['siembras_por_cultivo'].get(cultivo, 0),
+                    'superficie_total': estadisticas['hectareas_por_cultivo'].get(cultivo, 0),
+                    'num_recibos': 0,  # No tenemos este dato fácilmente, dejarlo en 0
+                    'ingresos_totales': 0  # No tenemos este dato fácilmente, dejarlo en 0
+                })
+            
+            ruta_pdf = generar_pdf_estadisticas(estadisticas, estadisticas_cultivo)
+            
+            messagebox.showinfo("Éxito", 
+                            f"PDF generado correctamente\n\n"
+                            f"Archivo: {os.path.basename(ruta_pdf)}")
+            
+            from modules.reports import abrir_pdf
+            abrir_pdf(ruta_pdf)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al generar PDF:\n{str(e)}")
 
 
 class VentanaRenombrarCampesino:
