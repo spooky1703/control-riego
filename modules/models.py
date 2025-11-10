@@ -24,6 +24,7 @@ def get_connection():
     conn.execute("PRAGMA synchronous = NORMAL")  # Mejor rendimiento
     
     return conn
+
 def init_db():
     """Inicializa la base de datos con todas las tablas necesarias"""
     conn = get_connection()
@@ -171,7 +172,6 @@ def buscar_campesino(termino: str) -> List[Dict]:
     conn.close()
     return resultados
 
-
 def obtener_campesino_por_id(campesino_id: int) -> Optional[Dict]:
     """Obtiene un campesino por su ID"""
     conn = get_connection()
@@ -180,6 +180,7 @@ def obtener_campesino_por_id(campesino_id: int) -> Optional[Dict]:
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
+
 def obtener_campesino_por_lote(lote: str) -> Optional[Dict]:
     """Obtiene un campesino por su número de lote"""
     conn = get_connection()
@@ -188,6 +189,7 @@ def obtener_campesino_por_lote(lote: str) -> Optional[Dict]:
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
+
 def crear_campesino(datos: Dict) -> int:
     """Crea un nuevo campesino"""
     conn = get_connection()
@@ -218,6 +220,7 @@ def crear_campesino(datos: Dict) -> int:
         raise ValueError(f"El lote {datos['numero_lote']} ya existe")
     finally:
         conn.close()
+
 def actualizar_campesino(campesino_id: int, datos: Dict) -> bool:
     """Actualiza los datos de un campesino"""
     conn = get_connection()
@@ -251,6 +254,7 @@ def actualizar_campesino(campesino_id: int, datos: Dict) -> bool:
         return True
     finally:
         conn.close()
+
 def eliminar_campesino(campesino_id: int) -> bool:
     """Eliminación lógica de un campesino"""
     conn = get_connection()
@@ -269,6 +273,7 @@ def eliminar_campesino(campesino_id: int) -> bool:
     conn.commit()
     conn.close()
     return True
+
 def obtener_todos_campesinos() -> List[Dict]:
     """Obtiene todos los campesinos activos"""
     conn = get_connection()
@@ -281,6 +286,7 @@ def obtener_todos_campesinos() -> List[Dict]:
     resultados = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return resultados
+
 def contar_campesinos() -> int:
     """Cuenta el número de campesinos activos"""
     conn = get_connection()
@@ -289,7 +295,9 @@ def contar_campesinos() -> int:
     count = cursor.fetchone()[0]
     conn.close()
     return count
+
 # ==================== FUNCIONES DE SIEMBRAS ====================
+
 def obtener_siembra_activa(campesino_id: int) -> Optional[Dict]:
     """Obtiene la siembra activa de un campesino"""
     conn = get_connection()
@@ -303,6 +311,7 @@ def obtener_siembra_activa(campesino_id: int) -> Optional[Dict]:
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
+
 def obtener_historial_siembras(campesino_id: int) -> List[Dict]:
     """Obtiene el historial completo de siembras de un campesino"""
     conn = get_connection()
@@ -315,6 +324,7 @@ def obtener_historial_siembras(campesino_id: int) -> List[Dict]:
     resultados = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return resultados
+
 def crear_siembra(campesino_id: int, cultivo: str, ciclo: str) -> int:
     """Crea una nueva siembra"""
     conn = get_connection()
@@ -328,6 +338,7 @@ def crear_siembra(campesino_id: int, cultivo: str, ciclo: str) -> int:
     conn.commit()
     conn.close()
     return siembra_id
+
 def actualizar_siembra(siembra_id: int, datos: Dict) -> bool:
     """
     Actualiza datos de una siembra en la base de datos
@@ -392,6 +403,7 @@ def actualizar_siembra(siembra_id: int, datos: Dict) -> bool:
     finally:
         if conn:
             conn.close()
+
 def eliminar_siembra(siembra_id: int) -> bool:
     """Elimina una siembra (marca como inactiva)"""
     conn = get_connection()
@@ -427,6 +439,7 @@ def obtener_siembra_por_id(siembra_id: int) -> Optional[Dict]:
     if row:
         return dict(row)
     return None
+
 def obtener_todas_las_siembras() -> List[Dict]:
     """Obtiene todas las siembras (activas e inactivas)"""
     conn = get_connection()
@@ -435,6 +448,7 @@ def obtener_todas_las_siembras() -> List[Dict]:
     resultados = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return resultados
+
 def cerrar_siembra(siembra_id: int):
     """Marca una siembra como finalizada"""
     conn = get_connection()
@@ -446,6 +460,7 @@ def cerrar_siembra(siembra_id: int):
     ''', (siembra_id,))
     conn.commit()
     conn.close()
+
 def incrementar_riegos(siembra_id: int):
     """Incrementa el contador de riegos de una siembra"""
     conn = get_connection()
@@ -457,6 +472,7 @@ def incrementar_riegos(siembra_id: int):
     ''', (siembra_id,))
     conn.commit()
     conn.close()
+
 def decrementar_riegos(siembra_id: int) -> bool:
     """Decrementa en 1 el número de riegos de una siembra"""
     conn = get_connection()
@@ -476,7 +492,9 @@ def decrementar_riegos(siembra_id: int) -> bool:
         raise e
     finally:
         conn.close()
+
 # ==================== FUNCIONES DE RECIBOS ====================
+
 def crear_recibo(datos: Dict) -> int:
     """Crea un nuevo recibo"""
     conn = get_connection()
@@ -502,6 +520,7 @@ def crear_recibo(datos: Dict) -> int:
     conn.commit()
     conn.close()
     return recibo_id
+
 def obtener_recibos_dia(fecha: str) -> List[Dict]:
     """Obtiene todos los recibos de un día (no eliminados)"""
     conn = get_connection()
@@ -516,6 +535,7 @@ def obtener_recibos_dia(fecha: str) -> List[Dict]:
     resultados = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return resultados
+
 def obtener_recibo_por_id(recibo_id: int) -> Optional[Dict]:
     """Obtiene un recibo por su ID con todos los datos"""
     conn = get_connection()
@@ -529,6 +549,7 @@ def obtener_recibo_por_id(recibo_id: int) -> Optional[Dict]:
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
+
 def eliminar_recibo(recibo_id: int, motivo: str = ""):
     """Marca un recibo como eliminado"""
     conn = get_connection()
@@ -588,6 +609,7 @@ def obtener_recibos_campesino(campesino_id: int) -> List[Dict]:
     resultados = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return resultados
+
 def obtener_todos_los_recibos() -> List[Dict]:
     """Obtiene todos los recibos (activos e inactivos)"""
     conn = get_connection()
@@ -601,6 +623,7 @@ def obtener_todos_los_recibos() -> List[Dict]:
     resultados = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return resultados
+
 def actualizar_recibo(recibo_id: int, nuevos_datos: Dict) -> bool:
     """Actualiza los datos de un recibo (menos folio, fecha, hora, campesino_id, siembra_id)"""
     conn = get_connection()
@@ -629,7 +652,9 @@ def actualizar_recibo(recibo_id: int, nuevos_datos: Dict) -> bool:
         return True
     finally:
         conn.close()
+
 # ==================== FUNCIONES DE CONFIGURACIÓN ====================
+
 def obtener_configuracion(clave: str) -> Optional[str]:
     """Obtiene un valor de configuración"""
     conn = get_connection()
@@ -638,6 +663,7 @@ def obtener_configuracion(clave: str) -> Optional[str]:
     row = cursor.fetchone()
     conn.close()
     return row['valor'] if row else None
+
 def actualizar_configuracion(clave: str, valor: str):
     """Actualiza un valor de configuración"""
     conn = get_connection()
@@ -648,6 +674,7 @@ def actualizar_configuracion(clave: str, valor: str):
     ''', (clave, valor))
     conn.commit()
     conn.close()
+
 def obtener_toda_configuracion() -> Dict:
     """Obtiene toda la configuración del sistema"""
     conn = get_connection()
@@ -656,7 +683,9 @@ def obtener_toda_configuracion() -> Dict:
     config = {row['clave']: row['valor'] for row in cursor.fetchall()}
     conn.close()
     return config
+
 # ==================== FUNCIONES DE AUDITORÍA ====================
+
 def registrar_auditoria(tipo_evento: str, descripcion: str, datos_previos: Optional[str] = None):
     """Registra un evento en la tabla de auditoría"""
     conn = get_connection()
@@ -667,6 +696,7 @@ def registrar_auditoria(tipo_evento: str, descripcion: str, datos_previos: Optio
     ''', (tipo_evento, descripcion, datos_previos))
     conn.commit()
     conn.close()
+
 def obtener_auditoria(limite: int = 100) -> List[Dict]:
     """Obtiene los últimos registros de auditoría"""
     conn = get_connection()
@@ -679,7 +709,9 @@ def obtener_auditoria(limite: int = 100) -> List[Dict]:
     resultados = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return resultados
+
 # ==================== FUNCIÓN DE CARGA INICIAL ====================
+
 def cargar_campesinos_desde_csv(ruta_csv: str):
     """Carga los campesinos desde el archivo CSV inicial con detección automática de encoding"""
     
@@ -828,7 +860,6 @@ def obtener_estadisticas_generales() -> Dict:
         'campesinos_sin_siembra': campesinos_sin_siembra
     }
 
-
 def obtener_estadisticas_por_cultivo(cultivo: str) -> Dict:
     """Obtiene estadísticas de un cultivo específico"""
     conn = get_connection()
@@ -968,7 +999,6 @@ def partir_lote(campesino_id: int, num_divisiones: int, superficies: List[float]
         raise e
     finally:
         conn.close()
-
 
 def renombrar_campesino(campesino_id: int, nuevo_nombre: str) -> bool:
     """

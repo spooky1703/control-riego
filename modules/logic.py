@@ -175,7 +175,6 @@ def incrementar_folio() -> int:
 
     return folio_actual
 
-
 def reiniciar_folios_y_ciclo(nuevo_ciclo: str) -> bool:
 
     """
@@ -372,9 +371,7 @@ def vender_riego(campesino_id: int) -> Dict:
 
     }
 
-def _generar_datos_recibo(campesino: Dict, siembra_id: int, cultivo: str,
-
-numero_riego: int, tipo_accion: str, ciclo: str) -> Dict:
+def _generar_datos_recibo(campesino: Dict, siembra_id: int, cultivo: str, numero_riego: int, tipo_accion: str, ciclo: str) -> Dict:
 
     """Genera los datos para crear un recibo (función auxiliar)"""
 
@@ -509,7 +506,6 @@ def eliminar_recibo_dia(recibo_id: int, motivo: str = "") -> float:
     registrar_auditoria('RECIBO_ELIMINADO', mensaje_auditoria, None)
     
     return recibo['costo']
-
 
 def decrementar_folio() -> int:
     """

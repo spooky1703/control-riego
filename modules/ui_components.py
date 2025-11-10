@@ -293,7 +293,6 @@ class VentanaPrincipal:
         # Cargar todos los campesinos
         self.cargar_todos_campesinos(ordenar_por_lote=True)
 
-    
     def cargar_todos_campesinos(self, ordenar_por_lote=True):
         """
         Carga todos los campesinos ordenados SIEMPRE por lote (numérico).
@@ -326,8 +325,7 @@ class VentanaPrincipal:
         
         # Actualizar contador
         self.actualizar_total_dia()
-
-    
+ 
     def abrir_estadisticas(self):
         """Abre la ventana de estadísticas"""
         VentanaEstadisticas(self.root)
@@ -373,8 +371,7 @@ class VentanaPrincipal:
                 cultivo,
                 riegos
             ), tags=(str(camp['id']),))
-
-   
+ 
     def limpiar_busqueda(self):
         """Limpia la búsqueda"""
         self.entry_busqueda.delete(0, tk.END)
@@ -417,8 +414,7 @@ class VentanaPrincipal:
     def abrir_form_nuevo_campesino(self):
         """Abre la ventana de formulario para crear nuevo campesino"""
         VentanaFormularioNuevoCampesino(self.root, self)
-
-    
+   
     def abrir_configuracion(self):
         """Abre el diálogo de configuración"""
         DialogoConfiguracion(self.root)
@@ -506,12 +502,12 @@ class VentanaVenta:
         frame_info.pack(fill=tk.X, padx=10, pady=10)
         
         info_text = f"""
-Nombre: {self.campesino['nombre']}
-Lote: {self.campesino['numero_lote']}
-Localidad: {self.campesino['localidad']}
-Barrio: {self.campesino['barrio']}
-Superficie: {self.campesino['superficie']} hectáreas
-"""
+            Nombre: {self.campesino['nombre']}
+            Lote: {self.campesino['numero_lote']}
+            Localidad: {self.campesino['localidad']}
+            Barrio: {self.campesino['barrio']}
+            Superficie: {self.campesino['superficie']} hectáreas
+            """
         ttk.Label(frame_info, text=info_text, font=('Helvetica', 10)).pack(anchor=tk.W)
         
         # Información de siembra actual
@@ -673,7 +669,6 @@ Superficie: {self.campesino['superficie']} hectáreas
             messagebox.showerror("Error de Validación", str(e))
         except Exception as e:
             messagebox.showerror("Error", f"Error al generar recibo:\n{str(e)}")
-
 
 # ==================== VENTANA EDITAR SIEMBRA Y RIEGO ====================
 
@@ -989,7 +984,6 @@ class VentanaAgregarRiego:
             messagebox.showerror("Error de validación", "Fecha u hora inválida (formato YYYY-MM-DD y HH:MM:SS)")
         except Exception as e:
             messagebox.showerror("Error", f"Error al guardar riego: {str(e)}")
-
 
 # ==================== VENTANA REINICIAR CICLO ====================
 
@@ -1312,7 +1306,6 @@ class VentanaDetalleDia:
             except Exception as e:
                 messagebox.showerror("Error", f"Error al eliminar recibo:\n{str(e)}")
 
-    
     def reimprimir_recibo(self):
         """Reimprime el recibo seleccionado - RECIBOS TEMPORALES"""
         selection = self.tree.selection()
@@ -1352,7 +1345,6 @@ class VentanaDetalleDia:
             messagebox.showinfo("Éxito", f"Archivo exportado:\n{filepath}")
         except Exception as e:
             messagebox.showerror("Error", f"Error al exportar:\n{str(e)}")
-
 
 # ==================== FORMULARIO CAMPESINO ====================
 
@@ -1527,7 +1519,6 @@ class FormularioCampesino:
             self.ventana_principal
         )
 
-
 # ==================== VENTANA HISTORIAL ====================
 
 class VentanaHistorial:
@@ -1555,11 +1546,11 @@ class VentanaHistorial:
         frame_info.pack(fill=tk.X, padx=10, pady=10)
         
         info_text = f"""
-Nombre: {self.campesino['nombre']}
-Lote: {self.campesino['numero_lote']}
-Localidad: {self.campesino['localidad']} - {self.campesino['barrio']}
-Superficie: {self.campesino['superficie']} ha
-"""
+            Nombre: {self.campesino['nombre']}
+            Lote: {self.campesino['numero_lote']}
+            Localidad: {self.campesino['localidad']} - {self.campesino['barrio']}
+            Superficie: {self.campesino['superficie']} ha
+            """
         ttk.Label(frame_info, text=info_text, font=('Helvetica', 10)).pack(anchor=tk.W)
         
         # Frame de siembras históricas
@@ -1681,7 +1672,6 @@ Superficie: {self.campesino['superficie']} ha
                     pass
         except Exception as e:
             messagebox.showerror("Error", f"Error al reimprimir:\n{str(e)}")
-
 
 # ==================== DIÁLOGO DE CONFIGURACIÓN ====================
 
@@ -1806,7 +1796,6 @@ class DialogoConfiguracion:
         except Exception as e:
             messagebox.showerror("Error", f"Error al guardar configuración:\n{str(e)}")
 
-
 # ==================== VENTANA ADMINISTRAR DATOS ====================
 
 class VentanaAdministrarDatos:
@@ -1914,9 +1903,7 @@ class VentanaAdministrarDatos:
             self.cargar_nombre_actual()
             self.entry_nuevo_nombre.delete(0, tk.END)
         except Exception as e:
-            messagebox.showerror("Error", f"Error al actualizar nombre: {str(e)}")
-            
-            
+            messagebox.showerror("Error", f"Error al actualizar nombre: {str(e)}")         
 
 class VentanaEstadisticas:
     """Ventana de estadísticas e insights con gráficas"""
@@ -2119,11 +2106,10 @@ class VentanaEstadisticas:
         stats_cultivo = obtener_estadisticas_por_cultivo(cultivo)
         
         mensaje = f"""📊 ESTADÍSTICAS DE {cultivo.upper()}
-
-👥 Campesinos: {stats_cultivo['total_campesinos']}
-🌾 Hectáreas: {stats_cultivo['total_hectareas']} ha
-💧 Riegos promedio: {stats_cultivo['riegos_promedio']}
-📊 Total de riegos: {stats_cultivo['total_riegos']}"""
+            👥 Campesinos: {stats_cultivo['total_campesinos']}
+            🌾 Hectáreas: {stats_cultivo['total_hectareas']} ha
+            💧 Riegos promedio: {stats_cultivo['riegos_promedio']}
+            📊 Total de riegos: {stats_cultivo['total_riegos']}"""
         
         messagebox.showinfo(f"Cultivo: {cultivo}", mensaje)
     
@@ -2236,7 +2222,6 @@ class VentanaRenombrarCampesino:
                 
             except Exception as e:
                 messagebox.showerror("Error", f"Error al renombrar:\n{str(e)}")
-
 
 class VentanaPartirLote:
     """Ventana para partir/subdividir un lote en múltiples sublotes"""
@@ -2518,7 +2503,6 @@ class VentanaEditarLote:
             self.ventana_principal
         )
 
-##
 class VentanaEditarSuperficie:
     """Ventana para editar la superficie de un lote"""
     
@@ -2614,7 +2598,6 @@ class VentanaEditarSuperficie:
         except Exception as e:
             messagebox.showerror("Error", f"Error al actualizar:\n{str(e)}")
 
-##
 class VentanaGestorReportes:
     """Gestor de reportes - Lista, abre y genera reportes diarios"""
     
@@ -2823,8 +2806,6 @@ class VentanaGestorReportes:
         except Exception as e:
             messagebox.showerror("Error", f"Error al generar corte de caja:\n{str(e)}")
 
-    
-    ####
     def abrir_reporte(self):
         """Abre el archivo seleccionado (PDF o Excel)"""
         selection = self.tree.selection()
@@ -2854,8 +2835,6 @@ class VentanaGestorReportes:
         except Exception as e:
             raise Exception(f"No se pudo abrir el archivo: {str(e)}")
 
-    
-    ####
     def imprimir_reporte(self):
         """Imprime el reporte seleccionado"""
         selection = self.tree.selection()
@@ -2908,7 +2887,6 @@ class VentanaGestorReportes:
                 subprocess.run(['xdg-open', reportes_dir])
         except Exception as e:
             messagebox.showerror("Error", f"Error al abrir carpeta:\n{str(e)}")
-
 
 # ==================== CLASE NUEVA: FORMULARIO NUEVO CAMPESINO ====================
 
