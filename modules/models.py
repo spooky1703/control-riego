@@ -132,19 +132,46 @@ def init_db():
                 """)
 # ==================== FUNCIONES DE CAMPESINOS ====================
 def buscar_campesino(termino: str) -> List[Dict]:
-    """Busca campesinos por lote o nombre"""
+    """
+    Busca campesinos de forma INTELIGENTE:
+    - Si es número puro (ej: 1, 5, 10): búsqueda EXACTA por lote
+    - Si tiene letras: búsqueda PARCIAL por nombre o lote
+    """
     conn = get_connection()
     cursor = conn.cursor()
-    termino = f"%{termino}%"
-    cursor.execute('''
-        SELECT * FROM campesinos 
-        WHERE (numero_lote LIKE ? OR nombre LIKE ?) 
-        AND activo = 1
-        ORDER BY nombre
-    ''', (termino, termino))
+    
+    # Limpiar el término
+    termino = termino.strip()
+    
+    # DETECTAR SI ES SOLO NÚMEROS
+    es_numero_puro = termino.isdigit()
+    
+    if es_numero_puro:
+        # ✅ BÚSQUEDA EXACTA por lote (sin LIKE)
+        try:
+            cursor.execute('''
+                SELECT * FROM campesinos
+                WHERE numero_lote = ? AND activo = 1
+                ORDER BY numero_lote
+            ''', (termino,))
+        except:
+            conn.close()
+            return []
+    else:
+        # ✅ BÚSQUEDA PARCIAL (contiene letras)
+        termino_busqueda = f"%{termino}%"
+        cursor.execute('''
+            SELECT * FROM campesinos
+            WHERE (nombre LIKE ? OR numero_lote LIKE ?)
+            AND activo = 1
+            ORDER BY nombre, numero_lote
+        ''', (termino_busqueda, termino_busqueda))
+    
     resultados = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return resultados
+
+
 def obtener_campesino_por_id(campesino_id: int) -> Optional[Dict]:
     """Obtiene un campesino por su ID"""
     conn = get_connection()

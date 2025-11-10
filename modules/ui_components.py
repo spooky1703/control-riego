@@ -187,18 +187,14 @@ class VentanaPrincipal:
         frame_busqueda.pack(fill=tk.X, padx=10, pady=5)
         
         # Selector de orden
-        ttk.Label(frame_busqueda, text="Ordenar por:", font=('Helvetica', 9)).pack(side=tk.LEFT, padx=5)
-        self.filtro_orden = ttk.Combobox(frame_busqueda, values=["Nombre", "Lote"], 
-                                          width=10, state="readonly", font=('Helvetica', 10))
-        self.filtro_orden.current(1)  # Por defecto "Lote"
-        self.filtro_orden.pack(side=tk.LEFT, padx=5)
-        
-        # Botón actualizar orden
-        ttk.Button(frame_busqueda, text="🔄", 
-                   command=lambda: self.cargar_todos_campesinos(
-                       ordenar_por_lote=(self.filtro_orden.get() == "Lote")
-                   ), 
-                   width=3).pack(side=tk.LEFT, padx=2)
+        ttk.Label(frame_busqueda, text="📋 Ordenado por: Lote (Numérico)", 
+                font=('Helvetica', 9, 'bold')).pack(side=tk.LEFT, padx=5)
+
+        # Botón para recargar
+        ttk.Button(frame_busqueda, text="🔄 Actualizar",
+                command=lambda: self.cargar_todos_campesinos(ordenar_por_lote=True),
+                width=15).pack(side=tk.LEFT, padx=2)
+
         
         # Barra separadora vertical
         ttk.Separator(frame_busqueda, orient='vertical').pack(side=tk.LEFT, fill='y', padx=10, pady=2)
@@ -298,67 +294,87 @@ class VentanaPrincipal:
         self.cargar_todos_campesinos(ordenar_por_lote=True)
 
     
-    def cargar_todos_campesinos(self, ordenar_por_lote=False):
-            """Carga todos los campesinos en la tabla"""
-            self.tree.delete(*self.tree.get_children())
-            campesinos = obtener_todos_campesinos()
+    def cargar_todos_campesinos(self, ordenar_por_lote=True):
+        """
+        Carga todos los campesinos ordenados SIEMPRE por lote (numérico).
+        """
+        self.tree.delete(*self.tree.get_children())
+        
+        campesinos = obtener_todos_campesinos()
+        
+        # Ordenar SIEMPRE por número de lote (numérico, no alfabético)
+        campesinos = sorted(campesinos, 
+                        key=lambda c: int(c['numero_lote']) 
+                                        if str(c['numero_lote']).isdigit() 
+                                        else 999999)
+        
+        # Agregar a la tabla
+        for camp in campesinos:
+            siembra = obtener_siembra_activa(camp['id'])
+            cultivo = siembra['cultivo'] if siembra else '-'
+            riegos = siembra['numero_riegos'] if siembra else 0
             
-            # Ordenar según parámetro
-            if ordenar_por_lote:
-                # Ordenar por número de lote (numérico)
-                campesinos = sorted(campesinos, key=lambda c: int(c['numero_lote']) if str(c['numero_lote']).isdigit() else 999999)
-            else:
-                # Ordenar por nombre (alfabético)
-                campesinos = sorted(campesinos, key=lambda c: c['nombre'].upper())
-            
-            for c in campesinos:
-                siembra = obtener_siembra_activa(c['id'])
-                cultivo = siembra['cultivo'] if siembra else '-'
-                riegos = siembra['numero_riegos'] if siembra else 0
-                
-                self.tree.insert('', tk.END, values=(
-                    c['numero_lote'],
-                    c['nombre'],
-                    c['localidad'],
-                    c['barrio'],
-                    f"{c['superficie']:.2f}",
-                    cultivo,
-                    riegos
-                ), tags=(str(c['id']),))
-            
-            self.actualizar_total_dia()
+            self.tree.insert('', tk.END, iid=camp['id'], values=(
+                camp['numero_lote'],
+                camp['nombre'],
+                camp['localidad'],
+                camp['barrio'],
+                f"{camp['superficie']:.2f}",
+                cultivo,
+                riegos
+            ), tags=(str(camp['id']),))
+        
+        # Actualizar contador
+        self.actualizar_total_dia()
 
+    
     def abrir_estadisticas(self):
         """Abre la ventana de estadísticas"""
         VentanaEstadisticas(self.root)
 
     def on_buscar(self, event=None):
-        """Busca campesinos"""
+        """Busca campesinos según el criterio introducido."""
         termino = self.entry_busqueda.get().strip()
         
         if not termino:
-            self.cargar_todos_campesinos()
+            self.cargar_todos_campesinos(ordenar_por_lote=True)
             return
         
-        self.tree.delete(*self.tree.get_children())
+        # Usar la función mejorada
         resultados = buscar_campesino(termino)
         
-        for c in resultados:
-            siembra = obtener_siembra_activa(c['id'])
+        # Mostrar en tabla
+        self.tree.delete(*self.tree.get_children())
+        
+        if not resultados:
+            # Si no hay resultados
+            self.tree.insert('', 'end', values=(
+                '', 'No hay coincidencias', '', '', '', '', ''
+            ))
+            return
+        
+        # Mostrar resultados ordenados por lote numérico
+        resultados_ordenados = sorted(resultados, 
+                                    key=lambda c: int(c['numero_lote']) 
+                                                if str(c['numero_lote']).isdigit() 
+                                                else 999999)
+        
+        for camp in resultados_ordenados:
+            siembra = obtener_siembra_activa(camp['id'])
             cultivo = siembra['cultivo'] if siembra else '-'
             riegos = siembra['numero_riegos'] if siembra else 0
             
-            self.tree.insert('', tk.END, values=(
-                c['numero_lote'],
-                c['nombre'],
-                c['localidad'],
-                c['barrio'],
-                f"{c['superficie']:.2f}",
+            self.tree.insert('', 'end', iid=camp['id'], values=(
+                camp['numero_lote'],
+                camp['nombre'],
+                camp['localidad'],
+                camp['barrio'],
+                f"{camp['superficie']:.2f}",
                 cultivo,
                 riegos
-            ), tags=(str(c['id']),))
+            ), tags=(str(camp['id']),))
 
-    
+   
     def limpiar_busqueda(self):
         """Limpia la búsqueda"""
         self.entry_busqueda.delete(0, tk.END)
@@ -399,8 +415,9 @@ class VentanaPrincipal:
         VentanaHistorial(self.root, self.campesino_seleccionado)
     
     def abrir_form_nuevo_campesino(self):
-        """Abre el formulario para crear un nuevo campesino"""
-        FormularioCampesino(self.root, None, self)
+        """Abre la ventana de formulario para crear nuevo campesino"""
+        VentanaFormularioNuevoCampesino(self.root, self)
+
     
     def abrir_configuracion(self):
         """Abre el diálogo de configuración"""
@@ -2891,3 +2908,220 @@ class VentanaGestorReportes:
                 subprocess.run(['xdg-open', reportes_dir])
         except Exception as e:
             messagebox.showerror("Error", f"Error al abrir carpeta:\n{str(e)}")
+
+
+# ==================== CLASE NUEVA: FORMULARIO NUEVO CAMPESINO ====================
+
+class VentanaFormularioNuevoCampesino:
+    """Ventana de formulario para registrar un nuevo campesino/ejidatario"""
+    
+    def __init__(self, parent, ventana_principal):
+        self.ventana_principal = ventana_principal
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title("➕ Nuevo Ejidatario")
+        self.ventana.geometry("700x850")
+        self.ventana.transient(parent)
+        self.ventana.grab_set()
+        
+        # Variables
+        self.entries = {}
+        self.var_barrio = tk.StringVar()
+        
+        # Crear widgets
+        self.crear_widgets()
+    
+    def crear_widgets(self):
+        """Crea la interfaz del formulario"""
+        
+        # Canvas con scrollbar
+        canvas, scrollable_frame = crear_ventana_scrollable(self.ventana, None)
+        
+        # ===== ENCABEZADO =====
+        frame_encabezado = ttk.Frame(scrollable_frame, padding="15")
+        frame_encabezado.pack(fill=tk.X)
+        
+        ttk.Label(frame_encabezado, 
+                 text="➕ REGISTRAR NUEVO EJIDATARIO",
+                 font=('Helvetica', 14, 'bold')).pack(pady=10)
+        
+        ttk.Label(frame_encabezado,
+                 text="Complete todos los campos para crear un nuevo ejidatario",
+                 font=('Helvetica', 9),
+                 foreground='gray').pack()
+        
+        # ===== FORMULARIO PRINCIPAL =====
+        frame_form = ttk.LabelFrame(scrollable_frame, 
+                                   text="Datos del Ejidatario",
+                                   padding="25")
+        frame_form.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        
+        # Campo 1: NÚMERO DE LOTE
+        ttk.Label(frame_form, text="Número de Lote *", 
+                 font=('Helvetica', 10, 'bold')).pack(anchor=tk.W, pady=(15, 5))
+        entry_lote = ttk.Entry(frame_form, font=('Helvetica', 11), width=35)
+        entry_lote.pack(fill=tk.X, pady=(0, 5))
+        self.entries['numero_lote'] = entry_lote
+        ttk.Label(frame_form, text="Ej: 1, 2, 15, 203, 2-A, 15-B",
+                 font=('Helvetica', 8), foreground='#666666').pack(anchor=tk.W, pady=(0, 15))
+        
+        # Campo 2: NOMBRE
+        ttk.Label(frame_form, text="Nombre Completo *",
+                 font=('Helvetica', 10, 'bold')).pack(anchor=tk.W, pady=(15, 5))
+        entry_nombre = ttk.Entry(frame_form, font=('Helvetica', 11), width=35)
+        entry_nombre.pack(fill=tk.X, pady=(0, 5))
+        self.entries['nombre'] = entry_nombre
+        ttk.Label(frame_form, text="Nombre del propietario del lote",
+                 font=('Helvetica', 8), foreground='#666666').pack(anchor=tk.W, pady=(0, 15))
+        
+        # Campo 3: LOCALIDAD
+        ttk.Label(frame_form, text="Localidad *",
+                 font=('Helvetica', 10, 'bold')).pack(anchor=tk.W, pady=(15, 5))
+        entry_localidad = ttk.Entry(frame_form, font=('Helvetica', 11), width=35)
+        entry_localidad.insert(0, "Tezontepec de Aldama")
+        entry_localidad.pack(fill=tk.X, pady=(0, 5))
+        self.entries['localidad'] = entry_localidad
+        ttk.Label(frame_form, text="Municipio o localidad",
+                 font=('Helvetica', 8), foreground='#666666').pack(anchor=tk.W, pady=(0, 15))
+        
+        # Campo 4: BARRIO
+        ttk.Label(frame_form, text="Barrio *",
+                 font=('Helvetica', 10, 'bold')).pack(anchor=tk.W, pady=(15, 5))
+        barrios = ['PANUAYA', 'TEZONTEPEC', 'ATENGO', 'MANGAS', 'PRESAS', 'HUITEL']
+        combo_barrio = ttk.Combobox(frame_form, textvariable=self.var_barrio,
+                                   values=barrios, state='readonly',
+                                   font=('Helvetica', 11), width=32)
+        combo_barrio.pack(fill=tk.X, pady=(0, 5))
+        self.entries['barrio'] = combo_barrio
+        ttk.Label(frame_form, text="Selecciona el barrio correspondiente",
+                 font=('Helvetica', 8), foreground='#666666').pack(anchor=tk.W, pady=(0, 15))
+        
+        # Campo 5: SUPERFICIE
+        ttk.Label(frame_form, text="Superficie (hectáreas) *",
+                 font=('Helvetica', 10, 'bold')).pack(anchor=tk.W, pady=(15, 5))
+        entry_superficie = ttk.Entry(frame_form, font=('Helvetica', 11), width=35)
+        entry_superficie.pack(fill=tk.X, pady=(0, 5))
+        self.entries['superficie'] = entry_superficie
+        ttk.Label(frame_form, text="Ej: 0.5, 1.0, 1.25, 2.0 (use punto decimal)",
+                 font=('Helvetica', 8), foreground='#666666').pack(anchor=tk.W, pady=(0, 15))
+        
+        # Campo 6: EXTENSIÓN DE TIERRA (opcional)
+        ttk.Label(frame_form, text="Extensión de Tierra (Opcional)",
+                 font=('Helvetica', 10, 'bold')).pack(anchor=tk.W, pady=(15, 5))
+        entry_extension = ttk.Entry(frame_form, font=('Helvetica', 11), width=35)
+        entry_extension.pack(fill=tk.X, pady=(0, 5))
+        self.entries['extension_tierra'] = entry_extension
+        ttk.Label(frame_form, text="Ej: Regadío, Temporal, Mixto, Riego",
+                 font=('Helvetica', 8), foreground='#666666').pack(anchor=tk.W, pady=(0, 20))
+        
+        # Separador
+        ttk.Separator(frame_form, orient='horizontal').pack(fill=tk.X, pady=20)
+        
+        # ===== BOTONES =====
+        frame_botones = ttk.Frame(frame_form)
+        frame_botones.pack(pady=20, fill=tk.X, expand=True)
+        
+        ttk.Button(frame_botones, text="✅ GUARDAR EJIDATARIO",
+                  command=self.guardar_campesino,
+                  width=24).pack(side=tk.LEFT, padx=10)
+        
+        ttk.Button(frame_botones, text="❌ CANCELAR",
+                  command=self.ventana.destroy,
+                  width=18).pack(side=tk.LEFT, padx=10)
+        
+        # Nota al pie
+        frame_pie = ttk.Frame(scrollable_frame, padding="10")
+        frame_pie.pack(fill=tk.X)
+        ttk.Label(frame_pie, text="Los campos marcados con * son obligatorios",
+                 font=('Helvetica', 9), foreground='gray').pack()
+    
+    def validar_datos(self) -> tuple:
+        """Valida los datos antes de guardar. Retorna (True/False, mensaje)"""
+        
+        # Validar LOTE
+        lote = self.entries['numero_lote'].get().strip()
+        if not lote:
+            return False, "❌ El número de lote es obligatorio"
+        if len(lote) > 10:
+            return False, "❌ El lote es muy largo (máximo 10 caracteres)"
+        
+        # Validar NOMBRE
+        nombre = self.entries['nombre'].get().strip()
+        if not nombre:
+            return False, "❌ El nombre es obligatorio"
+        if len(nombre) < 3:
+            return False, "❌ El nombre debe tener al menos 3 caracteres"
+        if len(nombre) > 100:
+            return False, "❌ El nombre es muy largo (máximo 100 caracteres)"
+        
+        # Validar LOCALIDAD
+        localidad = self.entries['localidad'].get().strip()
+        if not localidad:
+            return False, "❌ La localidad es obligatoria"
+        
+        # Validar BARRIO
+        barrio = self.var_barrio.get().strip()
+        if not barrio:
+            return False, "❌ Debe seleccionar un barrio"
+        
+        # Validar SUPERFICIE
+        try:
+            superficie_str = self.entries['superficie'].get().strip()
+            if not superficie_str:
+                return False, "❌ La superficie es obligatoria"
+            
+            superficie = float(superficie_str)
+            
+            if superficie <= 0:
+                return False, "❌ La superficie debe ser mayor a 0"
+            if superficie > 100:
+                return False, "❌ La superficie parece incorrecta (mayor a 100 ha)"
+        except ValueError:
+            return False, "❌ La superficie debe ser un número válido (ej: 0.5, 1.25, 2.0)"
+        
+        return True, "OK"
+    
+    def guardar_campesino(self):
+        """Guarda el nuevo campesino en la base de datos"""
+        
+        # PASO 1: Validar
+        es_valido, mensaje = self.validar_datos()
+        
+        if not es_valido:
+            messagebox.showerror("❌ Error de Validación", mensaje)
+            return
+        
+        try:
+            # PASO 2: Preparar datos
+            datos = {
+                'numero_lote': self.entries['numero_lote'].get().strip(),
+                'nombre': self.entries['nombre'].get().strip(),
+                'localidad': self.entries['localidad'].get().strip(),
+                'barrio': self.var_barrio.get().strip(),
+                'superficie': float(self.entries['superficie'].get().strip()),
+                'extension_tierra': self.entries['extension_tierra'].get().strip() or ''
+            }
+            
+            # PASO 3: Crear en base de datos
+            nuevo_id = crear_campesino(datos)
+            
+            # PASO 4: Mostrar confirmación
+            messagebox.showinfo(
+                "✅ Éxito",
+                f"Ejidatario registrado correctamente!\n\n"
+                f"Lote: {datos['numero_lote']}\n"
+                f"Nombre: {datos['nombre']}\n"
+                f"Barrio: {datos['barrio']}\n"
+                f"Superficie: {datos['superficie']:.2f} ha"
+            )
+            
+            # PASO 5: Actualizar lista en ventana principal
+            self.ventana_principal.cargar_todos_campesinos(ordenar_por_lote=True)
+            
+            # PASO 6: Cerrar ventana del formulario
+            self.ventana.destroy()
+        
+        except Exception as e:
+            messagebox.showerror(
+                "❌ Error al Guardar",
+                f"No se pudo crear el ejidatario:\n\n{str(e)}"
+            )
