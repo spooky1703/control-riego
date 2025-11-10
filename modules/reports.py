@@ -31,10 +31,10 @@ from openpyxl.utils import get_column_letter
 
 # IMPORTANTE: Recibo en formato 1/3 carta - ORIENTACIÓN VERTICAL
 RECIBO_ANCHO = 21.6 * cm
-RECIBO_ALTO = 9.3 * cm
+RECIBO_ALTO = 9.1 * cm
 
 # Ruta del logo
-LOGO_PATH = os.path.join('assets', 'logo.png')
+LOGO_PATH = os.path.join('assets', 'lagoo.png')
 
 # ==================== UTILIDADES DE IMPRESIÓN (Windows) ====================
 
@@ -232,141 +232,178 @@ def imprimir_recibo_y_limpiar(pdf_path: str):
 # ==================== DIBUJO DE RECIBO ====================
 
 def _dibujar_recibo_principal(c, recibo: Dict, nombre_oficina: str, ubicacion: str, es_reimpresion: bool):
-    """Dibuja el recibo principal en el canvas - VERSIÓN AJUSTADA CON BLOQUE DE ENCABEZADO COMPACTO"""
-
-    # Mantener medidas originales
-    margen_izq = 1 * cm
-    margen_der = RECIBO_ANCHO - 1 * cm
-    margen_sup = RECIBO_ALTO - 0.6 * cm  # un poco menos margen arriba
-
-    # ===== MARCA DE AGUA =====
-    if es_reimpresion:
-        c.saveState()
-        c.setFont("Helvetica-Bold", 40)
-        c.setFillColorRGB(0.9, 0.9, 0.9)
-        c.rotate(45)
-        c.drawString(5 * cm, -2 * cm, "REIMPRESIÓN")
-        c.restoreState()
-
-    # ===== BLOQUE DE ENCABEZADO (LOGO + TÍTULO + RFC) =====
-    bloque_altura = 2.0 * cm  # altura total del encabezado
-    bloque_y_sup = margen_sup
-    bloque_y_inf = bloque_y_sup - bloque_altura
-
-    # Logo dentro del bloque, alineado al texto
-    logo_height = 1.3 * cm
-    logo_width = 1.3 * cm
-    logo_y = bloque_y_inf + 0.35 * cm  # más abajo para pegarlo a la línea inferior
+    """
+    Dibuja el recibo principal - MARCA DE AGUA AL FINAL
+    """
+    
+    # ===== COLORES =====
+    COLOR_VERDE = colors.HexColor('#B8D1BF')
+    COLOR_BEIGE = colors.HexColor('#F5F0E8')
+    COLOR_BEIGE_OSCURO = colors.HexColor('#C9B99A')
+    COLOR_TEXTO = colors.HexColor('#2C3E2E')
+    COLOR_TEXTO_GRIS = colors.HexColor('#666666')
+    
+    # ===== FONDO BEIGE =====
+    c.setFillColor(COLOR_BEIGE)
+    c.roundRect(0.15*cm, 0.15*cm, RECIBO_ANCHO - 0.3*cm, RECIBO_ALTO - 0.3*cm, 
+                0.5*cm, stroke=0, fill=1)
+    
+    # ===== HEADER VERDE (más alto) =====
+    c.setFillColor(COLOR_VERDE)
+    c.roundRect(0.4*cm, RECIBO_ALTO - 2.3*cm, RECIBO_ANCHO - 0.8*cm, 1.9*cm, 
+                0.4*cm, stroke=0, fill=1)
+    
+    # ===== LOGO (más grande) =====
     if os.path.exists(LOGO_PATH):
         try:
-            c.drawImage(LOGO_PATH, margen_izq, logo_y, width=logo_width, height=logo_height, mask='auto')
-        except Exception as e:
-            print(f"Error al añadir logo: {e}")
-
-    # Texto centrado en el bloque
-    texto_centro_y = bloque_y_sup - 0.7 * cm
-    c.setFont("Helvetica-Bold", 8.5)
-    c.drawCentredString(RECIBO_ANCHO / 2, texto_centro_y + 0.25 * cm,
-                       "ASOCIACIÓN DE CAMPESINOS DE BOMBEO Y REBOMBEO")
-    c.drawCentredString(RECIBO_ANCHO / 2, texto_centro_y - 0.05 * cm,
-                       "DEL CERRO DEL XICUCO A.C. M7-1")
-
-    c.setFont("Helvetica", 7)
-    c.drawCentredString(RECIBO_ANCHO / 2, texto_centro_y - 0.45 * cm, "RFC: ACB030619G68")
-
-    # ===== LÍNEA SEPARADORA =====
-    c.line(margen_izq, bloque_y_inf, margen_der, bloque_y_inf)
-
-    # ===== DATOS PRINCIPALES =====
-    y_pos = bloque_y_inf - 0.4 * cm
-    c.setFont("Helvetica-Bold", 8)
-
-    col1_x = margen_izq
-    col2_x = margen_izq + 6.5 * cm
-    col3_x = margen_izq + 13 * cm
-
-    c.drawString(col1_x, y_pos, f"NO. RECIBO: {recibo['folio']}")
-    c.drawString(col2_x, y_pos, f"No. Lote: {recibo['numero_lote']}")
-    c.drawString(col3_x, y_pos, f"No. Riego: {recibo['numero_riego']}")
-    y_pos -= 0.4 * cm
-
-    c.drawString(col1_x, y_pos, f"Cultivo: {recibo['cultivo']}")
-    c.drawString(col2_x, y_pos, f"Superficie: {recibo['superficie']} ha")
-    c.drawString(col3_x, y_pos, f"Ciclo: {recibo['ciclo']}")
-    y_pos -= 0.4 * cm
-
-    c.drawString(col1_x, y_pos, f"Barrio: {recibo['barrio']}")
-    y_pos -= 0.5 * cm
-
-    # ===== RECIBÍ DE =====
-    c.setFont("Helvetica", 9)
-    c.drawString(margen_izq, y_pos, "Recibí de:")
-    y_pos -= 0.35 * cm
-
+            c.drawImage(LOGO_PATH, 0.7*cm, RECIBO_ALTO - 2.1*cm, 
+                       width=1.7*cm, height=1.7*cm, mask='auto')
+        except:
+            pass
+    
+    # ===== TÍTULO (texto más grande) =====
+    c.setFillColor(colors.white)
     c.setFont("Helvetica-Bold", 10)
-    c.drawString(margen_izq + 0.5 * cm, y_pos, recibo['nombre'].upper())
-    y_pos -= 0.45 * cm
-
-    # ===== LÍNEA SEPARADORA =====
-    c.line(margen_izq, y_pos, margen_der, y_pos)
-    y_pos -= 0.35 * cm
-
-    # ===== CONCEPTO =====
-    c.setFont("Helvetica", 7)
-    c.drawString(margen_izq, y_pos, "Concepto: Pago de cuota de riego para el ciclo agrícola")
-    y_pos -= 0.45 * cm
-
-    # ===== TOTAL =====
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(margen_izq, y_pos, "TOTAL")
-
-    monto_texto = f"${recibo['costo']:.2f}"
-    c.setFont("Helvetica-Bold", 14)
-    monto_width = c.stringWidth(monto_texto, "Helvetica-Bold", 14)
-    c.drawString(margen_der - monto_width, y_pos, monto_texto)
-
-    c.setFont("Helvetica", 7)
-    efectivo_texto = "(pago en efectivo)"
-    c.drawString(margen_der - monto_width - c.stringWidth(efectivo_texto, "Helvetica", 7) - 0.2 * cm,
-                y_pos + 0.05 * cm, efectivo_texto)
-    y_pos -= 0.4 * cm
-
-    # ===== LÍNEA SEPARADORA =====
-    c.line(margen_izq, y_pos, margen_der, y_pos)
-    y_pos -= 0.45 * cm
-
-    # ===== FECHA Y HORA =====
-    c.setFont("Helvetica", 7)
+    c.drawCentredString(RECIBO_ANCHO/2 + 0.5*cm, RECIBO_ALTO - 1*cm, 
+                       "ASOCIACIÓN DE CAMPESINOS DE BOMBEO Y REBOMBEO")
+    
+    c.setFont("Helvetica-Bold", 9)
+    c.drawCentredString(RECIBO_ANCHO/2 + 0.5*cm, RECIBO_ALTO - 1.35*cm, 
+                       "DEL CERRO DEL XICUCO A.C. M7-1")
+    
+    c.setFont("Helvetica", 8)
+    c.drawCentredString(RECIBO_ANCHO/2 + 0.5*cm, RECIBO_ALTO - 1.75*cm, 
+                       "RFC: ACB030619G68")
+    
+    # ===== SEPARADOR =====
+    y_pos = RECIBO_ALTO - 2.45*cm
+    c.setStrokeColor(COLOR_BEIGE_OSCURO)
+    c.setLineWidth(0.5)
+    c.line(0.7*cm, y_pos, RECIBO_ANCHO - 0.7*cm, y_pos)
+    
+    # ===== CAJA DE DATOS (más alta) =====
+    y_pos -= 0.2*cm
+    c.setFillColor(colors.white)
+    c.roundRect(0.7*cm, y_pos - 1.5*cm, RECIBO_ANCHO - 1.4*cm, 1.4*cm, 
+                0.25*cm, stroke=1, fill=1)
+    
+    # ===== GRID DE DATOS (texto más grande) =====
+    c.setFillColor(COLOR_TEXTO)
+    c.setFont("Helvetica-Bold", 8.5)
+    
+    col1 = 1*cm
+    col2 = 6.5*cm
+    col3 = 12*cm
+    col4 = 17.5*cm
+    
+    row_y = y_pos - 0.45*cm
+    
+    # FILA 1
+    c.drawString(col1, row_y, f"NO. RECIBO: {recibo['folio']}")
+    c.drawString(col2, row_y, f"No. Lote: {recibo['numero_lote']}")
+    c.drawString(col3, row_y, f"No. Riego: {recibo['numero_riego']}")
+    c.drawString(col4, row_y, f"Barrio: {recibo['barrio']}")
+    
+    row_y -= 0.45*cm
+    
+    # FILA 2
+    col1_fila2 = 1*cm
+    col2_fila2 = 8.5*cm
+    col3_fila2 = 16*cm
+    
+    c.drawString(col1_fila2, row_y, f"Cultivo: {recibo['cultivo']}")
+    c.drawString(col2_fila2, row_y, f"Superficie: {recibo['superficie']} ha")
+    c.drawString(col3_fila2, row_y, f"Ciclo: {recibo['ciclo']}")
+    
+    # ===== RECIBÍ DE (más espacio y texto más grande) =====
+    y_pos = row_y - 0.95*cm
+    c.setFillColor(COLOR_TEXTO_GRIS)
+    c.setFont("Helvetica", 8.5)
+    c.drawString(0.8*cm, y_pos, "Recibí de:")
+    
+    c.setFillColor(COLOR_TEXTO)
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(2.2*cm, y_pos, recibo['nombre'].upper())
+    
+    # ===== CONCEPTO (más espacio) =====
+    y_pos -= 0.5*cm
+    c.setStrokeColor(COLOR_BEIGE_OSCURO)
+    c.line(0.8*cm, y_pos, RECIBO_ANCHO - 0.8*cm, y_pos)
+    
+    y_pos -= 0.3*cm
+    c.setFillColor(COLOR_TEXTO_GRIS)
+    c.setFont("Helvetica", 8)
+    c.drawString(0.8*cm, y_pos, "Concepto: Pago de cuota de riego para el ciclo agrícola")
+    
+    # ===== TOTAL + MONTO (más espacio y texto más grande) =====
+    y_pos -= 0.5*cm
+    
+    c.setFillColor(COLOR_TEXTO)
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(0.8*cm, y_pos, "TOTAL")
+    
+    # Caja del monto (más grande)
+    monto_x = RECIBO_ANCHO - 5*cm
+    c.setFillColor(colors.white)
+    c.setStrokeColor(COLOR_VERDE)
+    c.setLineWidth(1.5)
+    c.roundRect(monto_x, y_pos - 0.35*cm, 4.2*cm, 0.75*cm, 
+                0.25*cm, stroke=1, fill=1)
+    
+    c.setFillColor(COLOR_TEXTO_GRIS)
+    c.setFont("Helvetica", 6.5)
+    c.drawString(monto_x + 0.2*cm, y_pos + 0.15*cm, "(pago en efectivo)")
+    
+    c.setFillColor(COLOR_TEXTO)
+    c.setFont("Helvetica-Bold", 15)
+    c.drawRightString(monto_x + 4*cm, y_pos - 0.15*cm, f"${recibo['costo']:.2f}")
+    
+    # ===== FOOTER (más espacio) =====
+    y_pos -= 0.9*cm
+    c.setStrokeColor(COLOR_BEIGE_OSCURO)
+    c.setLineWidth(0.5)
+    c.line(0.8*cm, y_pos, RECIBO_ANCHO - 0.8*cm, y_pos)
+    
+    y_pos -= 0.3*cm
+    c.setFillColor(COLOR_TEXTO_GRIS)
+    c.setFont("Helvetica", 7.5)
+    
     fecha_obj = datetime.strptime(recibo['fecha'], '%Y-%m-%d')
-    fecha_texto = f"C. Juan Aldama #25, Col. Centro, Tezontepec de Aldama. Fecha: {fecha_obj.strftime('%d/%m/%Y')}"
+    c.drawString(0.8*cm, y_pos, 
+                f"C. Juan Aldama #25, Col. Centro, Tezontepec de Aldama. Fecha: {fecha_obj.strftime('%d/%m/%Y')}")
+    
+    y_pos -= 0.28*cm
     hora_obj = datetime.strptime(recibo['hora'], '%H:%M:%S')
-    am_pm = "a.m." if hora_obj.hour < 12 else "p.m."
+    am_pm = "p.m." if hora_obj.hour >= 12 else "a.m."
     hora_12 = hora_obj.hour if hora_obj.hour <= 12 else hora_obj.hour - 12
     if hora_12 == 0:
         hora_12 = 12
-    hora_texto = f"Hora: {hora_12:02d}:{hora_obj.minute:02d}:{hora_obj.second:02d} {am_pm}"
-    c.drawString(margen_izq, y_pos, fecha_texto)
-    y_pos -= 0.3 * cm
-    c.drawString(margen_izq, y_pos, hora_texto)
-    y_pos -= 0.45 * cm
-
-    # ===== FIRMA =====
-    c.setFont("Helvetica", 8)
-    c.drawRightString(margen_der, y_pos, "Firma Recaudador")
-    y_pos -= 0.2 * cm
-    c.line(margen_der - 4 * cm, y_pos, margen_der, y_pos)
-    y_pos -= 0.35 * cm
-
-    # ===== LEYENDA FISCAL =====
+    
+    c.drawString(0.8*cm, y_pos, f"Hora: {hora_12:02d}:{hora_obj.minute:02d}:{hora_obj.second:02d} {am_pm}")
+    
+    # Firma (más espacio)
+    c.drawRightString(RECIBO_ANCHO - 0.8*cm, y_pos + 0.28*cm, "Firma Recaudador")
+    c.line(RECIBO_ANCHO - 4*cm, y_pos + 0.18*cm, RECIBO_ANCHO - 0.8*cm, y_pos + 0.18*cm)
+    
+    # ===== LEYENDA LEGAL (texto más grande y más espacio) =====
+    y_pos -= 0.45*cm
     c.setFont("Helvetica", 6)
-    leyenda = [
-        "Este recibo ampara el pago de cuota ordinaria destinada exclusivamente al mantenimiento y operación del módulo de riego,",
-        "conforme al régimen fiscal de personas morales con fines no lucrativos. Exento de IVA y de ISR conforme a los artículos 79",
-        "y 80 de la Ley del ISR y al artículo 15, fracción XII de la Ley del IVA."
-    ]
-    for linea in leyenda:
-        c.drawString(margen_izq, y_pos, linea)
-        y_pos -= 0.22 * cm
+    
+    c.drawString(0.7*cm, y_pos, 
+                "Este recibo ampara el pago de cuota ordinaria destinada exclusivamente al mantenimiento y operación del módulo de riego, conforme al régimen fiscal")
+    y_pos -= 0.22*cm
+    c.drawString(0.7*cm, y_pos,
+                "de personas morales con fines no lucrativos. Exento de IVA y de ISR conforme a los artículos 79 y 80 de la Ley del ISR y al artículo 15, fracción XII de la Ley del IVA.")
+    
+    # ===== MARCA DE AGUA (CENTRADA VERTICAL Y HORIZONTALMENTE) =====
+    if es_reimpresion:
+        c.saveState()
+        c.setFont("Helvetica-Bold", 32)
+        c.setFillColorRGB(0.9, 0.9, 0.9)
+        c.rotate(30)
+        c.drawString(8 * cm, 0.5 * cm, "REIMPRESIÓN")
+        c.restoreState()
+
 
 # ==================== REPORTE DIARIO ====================
 

@@ -4,6 +4,7 @@ import sqlite3
 import os
 import json
 import pandas as pd
+import chardet
 from datetime import datetime
 from typing import Optional, List, Dict, Tuple
 # Ruta de la base de datos
@@ -653,8 +654,24 @@ def obtener_auditoria(limite: int = 100) -> List[Dict]:
     return resultados
 # ==================== FUNCIÓN DE CARGA INICIAL ====================
 def cargar_campesinos_desde_csv(ruta_csv: str):
-    """Carga los campesinos desde el archivo CSV inicial"""
-    df_raw = pd.read_csv(ruta_csv, encoding='latin-1', header=None)
+    """Carga los campesinos desde el archivo CSV inicial con detección automática de encoding"""
+    
+    # 1. DETECTAR EL ENCODING CORRECTO
+    with open(ruta_csv, 'rb') as file:
+        raw_data = file.read()
+        detected = chardet.detect(raw_data)
+        encoding_detectado = detected['encoding']
+        confianza = detected['confidence']
+    
+    print(f"Encoding detectado: {encoding_detectado} (Confianza: {confianza:.2%})")
+    
+    # 2. LEER EL CSV CON EL ENCODING CORRECTO
+    try:
+        df_raw = pd.read_csv(ruta_csv, encoding=encoding_detectado, header=None)
+    except Exception as e:
+        print(f"Error con encoding {encoding_detectado}, intentando UTF-8...")
+        df_raw = pd.read_csv(ruta_csv, encoding='utf-8', header=None)
+    
     barrios_ordenados = [
         ('PANUAYA', 0, 201),
         ('TEZONTEPEC', 201, 367),
@@ -663,31 +680,47 @@ def cargar_campesinos_desde_csv(ruta_csv: str):
         ('PRESAS', 737, 998),
         ('HUITEL', 998, len(df_raw))
     ]
+    
     conn = get_connection()
     cursor = conn.cursor()
     total_cargados = 0
+    errores = []
+    
     for barrio, inicio, fin in barrios_ordenados:
         for idx in range(inicio + 2, fin):
-            row = df_raw.iloc[idx]
-            lote = str(row[1]).strip()
-            nombre = str(row[2]).strip()
-            superficie = str(row[3]).strip()
-            if lote == 'nan' or nombre == 'nan' or lote == '' or nombre == '':
-                continue
             try:
+                row = df_raw.iloc[idx]
+                lote = str(row[1]).strip()
+                nombre = str(row[2]).strip()
+                superficie = str(row[3]).strip()
+                
+                if lote == 'nan' or nombre == 'nan' or lote == '' or nombre == '':
+                    continue
+                
                 sup_valor = float(superficie)
+                
                 cursor.execute('''
                     INSERT OR IGNORE INTO campesinos 
                     (numero_lote, nombre, localidad, barrio, superficie, activo)
                     VALUES (?, ?, ?, ?, ?, 1)
                 ''', (lote, nombre, 'Tezontepec de Aldama', barrio, sup_valor))
+                
                 if cursor.rowcount > 0:
                     total_cargados += 1
-            except:
+                    
+            except Exception as e:
+                errores.append(f"Fila {idx}: {str(e)}")
                 continue
+    
     conn.commit()
     conn.close()
-    print(f"Total de campesinos cargados: {total_cargados}")
+    
+    print(f"✓ Total de campesinos cargados: {total_cargados}")
+    if errores:
+        print(f"⚠ Errores encontrados: {len(errores)}")
+        for error in errores[:5]:  # Mostrar solo los primeros 5
+            print(f"  - {error}")
+    
     return total_cargados
 
 def obtener_estadisticas_generales() -> Dict:

@@ -182,22 +182,44 @@ class VentanaPrincipal:
                                 foreground='green')
         label_total.pack(side=tk.LEFT)
         
-        # Frame de búsqueda
+                # ===== FRAME DE BÚSQUEDA CON ORDENAMIENTO =====
         frame_busqueda = ttk.LabelFrame(scrollable_frame, text="Buscar Campesino", padding="10")
         frame_busqueda.pack(fill=tk.X, padx=10, pady=5)
         
+        # Selector de orden
+        ttk.Label(frame_busqueda, text="Ordenar por:", font=('Helvetica', 9)).pack(side=tk.LEFT, padx=5)
+        self.filtro_orden = ttk.Combobox(frame_busqueda, values=["Nombre", "Lote"], 
+                                          width=10, state="readonly", font=('Helvetica', 10))
+        self.filtro_orden.current(1)  # Por defecto "Lote"
+        self.filtro_orden.pack(side=tk.LEFT, padx=5)
+        
+        # Botón actualizar orden
+        ttk.Button(frame_busqueda, text="🔄", 
+                   command=lambda: self.cargar_todos_campesinos(
+                       ordenar_por_lote=(self.filtro_orden.get() == "Lote")
+                   ), 
+                   width=3).pack(side=tk.LEFT, padx=2)
+        
+        # Barra separadora vertical
+        ttk.Separator(frame_busqueda, orient='vertical').pack(side=tk.LEFT, fill='y', padx=10, pady=2)
+        
+        # Campo de búsqueda
         ttk.Label(frame_busqueda, text="🔍").pack(side=tk.LEFT, padx=5)
-        self.entry_busqueda = ttk.Entry(frame_busqueda, width=40, font=('Helvetica', 11))
+        self.entry_busqueda = ttk.Entry(frame_busqueda, width=30, font=('Helvetica', 11))
         self.entry_busqueda.pack(side=tk.LEFT, padx=5)
         self.entry_busqueda.bind('<Return>', self.on_buscar)
         
+        # Botones de búsqueda
         ttk.Button(frame_busqueda, text="Buscar",
                    command=self.on_buscar).pack(side=tk.LEFT, padx=5)
         ttk.Button(frame_busqueda, text="Limpiar",
                    command=self.limpiar_busqueda).pack(side=tk.LEFT, padx=5)
         ttk.Button(frame_busqueda, text="➕ Nuevo Campesino",
                    command=self.abrir_form_nuevo_campesino).pack(side=tk.LEFT, padx=20)
-        
+
+
+
+
         # Frame de resultados
         frame_resultados = ttk.Frame(scrollable_frame, padding="10")
         frame_resultados.pack(fill=tk.BOTH, expand=True, padx=10)
@@ -273,28 +295,39 @@ class VentanaPrincipal:
                    command=self.abrir_administrar_datos, width=12).pack(side=tk.LEFT, padx=2, pady=2)
         
         # Cargar todos los campesinos
-        self.cargar_todos_campesinos()
+        self.cargar_todos_campesinos(ordenar_por_lote=True)
+
     
-    def cargar_todos_campesinos(self):
-        """Carga todos los campesinos en la tabla"""
-        self.tree.delete(*self.tree.get_children())
-        campesinos = obtener_todos_campesinos()
-        
-        for c in campesinos:
-            siembra = obtener_siembra_activa(c['id'])
-            cultivo = siembra['cultivo'] if siembra else '-'
-            riegos = siembra['numero_riegos'] if siembra else 0
+    def cargar_todos_campesinos(self, ordenar_por_lote=False):
+            """Carga todos los campesinos en la tabla"""
+            self.tree.delete(*self.tree.get_children())
+            campesinos = obtener_todos_campesinos()
             
-            self.tree.insert('', tk.END, values=(
-                c['numero_lote'],
-                c['nombre'],
-                c['localidad'],
-                c['barrio'],
-                f"{c['superficie']:.2f}",
-                cultivo,
-                riegos
-            ), tags=(str(c['id']),))
-    
+            # Ordenar según parámetro
+            if ordenar_por_lote:
+                # Ordenar por número de lote (numérico)
+                campesinos = sorted(campesinos, key=lambda c: int(c['numero_lote']) if str(c['numero_lote']).isdigit() else 999999)
+            else:
+                # Ordenar por nombre (alfabético)
+                campesinos = sorted(campesinos, key=lambda c: c['nombre'].upper())
+            
+            for c in campesinos:
+                siembra = obtener_siembra_activa(c['id'])
+                cultivo = siembra['cultivo'] if siembra else '-'
+                riegos = siembra['numero_riegos'] if siembra else 0
+                
+                self.tree.insert('', tk.END, values=(
+                    c['numero_lote'],
+                    c['nombre'],
+                    c['localidad'],
+                    c['barrio'],
+                    f"{c['superficie']:.2f}",
+                    cultivo,
+                    riegos
+                ), tags=(str(c['id']),))
+            
+            self.actualizar_total_dia()
+
     def abrir_estadisticas(self):
         """Abre la ventana de estadísticas"""
         VentanaEstadisticas(self.root)
@@ -302,6 +335,7 @@ class VentanaPrincipal:
     def on_buscar(self, event=None):
         """Busca campesinos"""
         termino = self.entry_busqueda.get().strip()
+        
         if not termino:
             self.cargar_todos_campesinos()
             return
@@ -323,6 +357,7 @@ class VentanaPrincipal:
                 cultivo,
                 riegos
             ), tags=(str(c['id']),))
+
     
     def limpiar_busqueda(self):
         """Limpia la búsqueda"""
