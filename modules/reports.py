@@ -262,7 +262,7 @@ def _dibujar_recibo_principal(c, recibo: Dict, nombre_oficina: str, ubicacion: s
             pass
     
     # ===== TÍTULO (texto más grande) =====
-    c.setFillColor(colors.white)
+    c.setFillColor(colors.black)
     c.setFont("Helvetica-Bold", 10)
     c.drawCentredString(RECIBO_ANCHO/2 + 0.5*cm, RECIBO_ALTO - 1*cm, 
                        "ASOCIACIÓN DE CAMPESINOS DE BOMBEO Y REBOMBEO")
@@ -403,7 +403,6 @@ def _dibujar_recibo_principal(c, recibo: Dict, nombre_oficina: str, ubicacion: s
         c.rotate(30)
         c.drawString(8 * cm, 0.5 * cm, "REIMPRESIÓN")
         c.restoreState()
-
 
 # ==================== REPORTE DIARIO ====================
 

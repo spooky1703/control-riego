@@ -36,7 +36,7 @@ from modules.reports import (
 )
 
 # Lista de cultivos comunes
-CULTIVOS = ['MAÍZ', 'FRIJOL', 'FRIJOL EJOTERO','TRIGO', 'SORGO', 'ALFALFA', 'CHILE', 'TOMATE', 'CEBOLLA', 'AJO', 'NABO' ,'AVENA','CALABAZA','CEBADA','ARBOL FRUTAL','PASTO','BROCOLI','COLIFLOR']
+CULTIVOS = ['MAÍZ', 'FRIJOL', 'FRIJOL EJOTERO','TRIGO', 'SORGO', 'ALFALFA', 'CHILE', 'TOMATE', 'CEBOLLA', 'AJO', 'NABO' ,'AVENA','HABA','CALABAZA','CEBADA','ARBOL FRUTAL','PASTO','BROCOLI','COLIFLOR']
 
 # ==================== VENTANA PRINCIPAL ====================
 
