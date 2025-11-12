@@ -238,7 +238,7 @@ def _dibujar_recibo_principal(c, recibo: Dict, nombre_oficina: str, ubicacion: s
     
     # ===== COLORES =====
     COLOR_VERDE = colors.HexColor('#B8D1BF')
-    COLOR_BEIGE = colors.HexColor('#F5F0E8')
+    COLOR_BEIGE = colors.HexColor('#FFFFFF')
     COLOR_BEIGE_OSCURO = colors.HexColor('#C9B99A')
     COLOR_TEXTO = colors.HexColor('#2C3E2E')
     COLOR_TEXTO_GRIS = colors.HexColor('#666666')
@@ -401,7 +401,7 @@ def _dibujar_recibo_principal(c, recibo: Dict, nombre_oficina: str, ubicacion: s
         c.setFont("Helvetica-Bold", 32)
         c.setFillColorRGB(0.9, 0.9, 0.9)
         c.rotate(30)
-        c.drawString(8 * cm, 0.5 * cm, "REIMPRESIÓN")
+        c.drawString(8 * cm, 0.1 * cm, "REIMPRESIÓN") # Cambiado de 0.5*cm a 0.1*cm
         c.restoreState()
 
 # ==================== REPORTE DIARIO ====================
