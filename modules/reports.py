@@ -1145,7 +1145,7 @@ def generar_pdf_estadisticas(estadisticas: Dict, estadisticas_cultivo: List[Dict
     c.setFont("Helvetica-Bold", 13)
     c.drawCentredString(ancho/2, ypos - 0.5*cm, "📊 RESUMEN EJECUTIVO")
     
-    ypos -= 2.5*cm
+    ypos -= 5*cm
     
     # Tabla de resumen con diseño mejorado
     datos_generales = [
@@ -1339,7 +1339,7 @@ def generar_pdf_estadisticas(estadisticas: Dict, estadisticas_cultivo: List[Dict
     c.setFont("Helvetica-Bold", 13)
     c.drawCentredString(ancho/2, ypos - 0.5*cm, "🌾 DETALLE COMPLETO POR CULTIVO")
     
-    ypos -= 2.5*cm
+    ypos -= 5*cm
     
     if estadisticas_cultivo:
         datos_cultivos = [["CULTIVO", "CAMPESINOS", "SUPERFICIE\n(ha)", "% DEL\nTOTAL", "PROMEDIO/\nCAMPESINO"]]
