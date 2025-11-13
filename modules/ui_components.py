@@ -2699,53 +2699,101 @@ class VentanaGestorReportes:
     def cargar_reportes(self):
         """Carga la lista de reportes desde el directorio"""
         self.tree.delete(*self.tree.get_children())
+        reportes_dir = os.path.join("database", "reportes")
         
-        reportes_dir = os.path.join('database', 'reportes')
         if not os.path.exists(reportes_dir):
             return
         
-        # Obtener todos los PDFs
-        archivos = [f for f in os.listdir(reportes_dir) if f.endswith(('.pdf', '.xlsx'))]
+        # Obtener todos los archivos PDF y Excel
+        archivos = [f for f in os.listdir(reportes_dir) if f.endswith((".pdf", ".xlsx"))]
         archivos.sort(reverse=True)  # Más recientes primero
         
         for archivo in archivos:
             ruta_completa = os.path.join(reportes_dir, archivo)
             
-            # Obtener tamaño
-            tamaño_bytes = os.path.getsize(ruta_completa)
-            if tamaño_bytes < 1024:
-                tamaño = f"{tamaño_bytes} B"
-            elif tamaño_bytes < 1024 * 1024:
-                tamaño = f"{tamaño_bytes / 1024:.1f} KB"
+            # Obtener tamaño del archivo
+            tamano_bytes = os.path.getsize(ruta_completa)
+            if tamano_bytes < 1024:
+                tamano = f"{tamano_bytes} B"
+            elif tamano_bytes < 1024 * 1024:
+                tamano = f"{tamano_bytes / 1024:.1f} KB"
             else:
-                tamaño = f"{tamaño_bytes / (1024 * 1024):.1f} MB"
+                tamano = f"{tamano_bytes / (1024 * 1024):.1f} MB"
             
-            # Extraer fecha del nombre del archivo (formato: reporte_diario_YYYYMMDD.pdf)
+            # Extraer fecha del nombre del archivo
             try:
-                fecha_str = archivo.replace('reporte_diario_', '').replace('.pdf', '')
-                if len(fecha_str) == 8:
-                    fecha = datetime.strptime(fecha_str, '%Y%m%d').strftime('%d/%m/%Y')
-                else:
-                    fecha = "Fecha desconocida"
+                # Extraer fecha según el tipo de archivo
+                if archivo.startswith("reporte_diario_"):
+                    # Reportes diarios: reporte_diario_YYYYMMDD.pdf
+                    fecha_str = archivo.replace("reporte_diario_", "").replace(".pdf", "")
+                    if len(fecha_str) == 8:
+                        fecha = datetime.strptime(fecha_str, "%Y%m%d").strftime("%d/%m/%Y")
+                    else:
+                        fecha = "Desconocido"
                 
-                # Obtener datos del reporte (si es posible)
-                fecha_consulta = datetime.strptime(fecha_str, '%Y%m%d').strftime('%Y-%m-%d')
-                recibos = obtener_recibos_dia(fecha_consulta)
-                num_recibos = len(recibos)
-                total = sum(r['costo'] for r in recibos)
-                total_str = f"${total:,.2f}"
-            except:
-                fecha = "Desconocido"
-                num_recibos = "-"
-                total_str = "-"
+                elif archivo.startswith("corte_caja_"):
+                    # Cortes de caja: corte_caja_YYYYMMDD.xlsx
+                    fecha_str = archivo.replace("corte_caja_", "").replace(".xlsx", "")
+                    if len(fecha_str) == 8:
+                        fecha = datetime.strptime(fecha_str, "%Y%m%d").strftime("%d/%m/%Y")
+                    else:
+                        fecha = "Desconocido"
+                
+                elif archivo.startswith("estadisticas_"):
+                    # Estadísticas: estadisticas_YYYYMMDD_HHMMSS.pdf
+                    fecha_str = archivo.replace("estadisticas_", "").replace(".pdf", "")
+                    # Tomar solo la parte de fecha (primeros 8 caracteres)
+                    if len(fecha_str) >= 8:
+                        fecha = datetime.strptime(fecha_str[:8], "%Y%m%d").strftime("%d/%m/%Y")
+                    else:
+                        fecha = "Desconocido"
+                
+                elif archivo.startswith("auditoria_"):
+                    # Auditorías: auditoria_YYYYMMDD_HHMMSS.pdf
+                    fecha_str = archivo.replace("auditoria_", "").replace(".pdf", "")
+                    if len(fecha_str) >= 8:
+                        fecha = datetime.strptime(fecha_str[:8], "%Y%m%d").strftime("%d/%m/%Y")
+                    else:
+                        fecha = "Desconocido"
+                
+                elif archivo.startswith("recibos_"):
+                    # Recibos Excel: recibos_YYYYMMDD.xlsx
+                    fecha_str = archivo.replace("recibos_", "").replace(".xlsx", "")
+                    if len(fecha_str) == 8:
+                        fecha = datetime.strptime(fecha_str, "%Y%m%d").strftime("%d/%m/%Y")
+                    else:
+                        fecha = "Desconocido"
+                
+                else:
+                    # Archivos con formato desconocido
+                    fecha = "Desconocido"
             
-            self.tree.insert('', tk.END, values=(
-                fecha,
-                archivo,
-                tamaño,
-                num_recibos,
-                total_str
-            ), tags=(ruta_completa,))
+            except Exception:
+                fecha = "Desconocido"
+            
+            # Obtener datos del reporte si es posible
+            num_recibos = "-"
+            total_str = "-"
+            
+            try:
+                # Intentar extraer fecha para consultar recibos (solo para reportes diarios y cortes)
+                if archivo.startswith("reporte_diario_") or archivo.startswith("corte_caja_"):
+                    fecha_str_base = archivo.replace("reporte_diario_", "").replace("corte_caja_", "")
+                    fecha_str_base = fecha_str_base.replace(".pdf", "").replace(".xlsx", "")
+                    
+                    if len(fecha_str_base) == 8:
+                        fecha_consulta = datetime.strptime(fecha_str_base, "%Y%m%d").strftime("%Y-%m-%d")
+                        recibos = obtener_recibos_dia(fecha_consulta)
+                        num_recibos = len(recibos)
+                        total = sum(r["costo"] for r in recibos)
+                        total_str = f"${total:,.2f}"
+            except:
+                pass
+            
+            self.tree.insert("", tk.END, 
+                            values=(fecha, archivo, tamano, num_recibos, total_str),
+                            tags=(ruta_completa,))
+
     
     def generar_nuevo_reporte(self):
         """Genera un reporte del día actual"""
