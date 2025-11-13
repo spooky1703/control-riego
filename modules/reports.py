@@ -885,106 +885,174 @@ def generar_pdf_estadisticas(estadisticas: Dict, estadisticas_cultivo: List[Dict
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.units import cm
     from reportlab.lib import colors
-    from reportlab.pdfgen import canvas as pdf_canvas
+    from reportlab.pdfgen import canvas as pdfcanvas
     from reportlab.platypus import Table, TableStyle
     
     # Crear directorio si no existe
-    reportes_dir = os.path.join('database', 'reportes')
+    reportes_dir = os.path.join("database", "reportes")
     os.makedirs(reportes_dir, exist_ok=True)
     
-    # Nombre del archivo
-    fecha_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+    # Nombre del archivo con fecha
+    fecha_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     nombre_archivo = f"estadisticas_{fecha_str}.pdf"
     ruta_pdf = os.path.join(reportes_dir, nombre_archivo)
     
     # Crear PDF
-    c = pdf_canvas.Canvas(ruta_pdf, pagesize=letter)
+    c = pdfcanvas.Canvas(ruta_pdf, pagesize=letter)
     ancho, alto = letter
     
-    # ===== ENCABEZADO =====
-    y_pos = alto - 2*cm
+    # ===== ENCABEZADO PROFESIONAL =====
+    ypos = alto - 2*cm
     
-    # Logo si existe
+    # Logo (si existe)
     if os.path.exists(LOGO_PATH):
         try:
-            c.drawImage(LOGO_PATH, 2*cm, y_pos - 1.5*cm, width=2*cm, height=2*cm, mask='auto')
-        except:
-            pass
+            c.drawImage(LOGO_PATH, 2*cm, ypos, width=2*cm, height=2*cm, mask='auto')
+        except Exception as e:
+            print(f"Error al añadir logo: {e}")
     
-    # Título
-    c.setFont("Helvetica-Bold", 18)
-    c.drawString(5*cm, y_pos, "ESTADÍSTICAS DEL SISTEMA")
-    y_pos -= 0.5*cm
+    # Título principal con fondo
+    c.setFillColor(colors.HexColor("#1F497D"))
+    c.roundRect(4.5*cm, ypos - 0.4*cm, 14*cm, 1*cm, 0.3*cm, stroke=0, fill=1)
     
-    nombre_oficina = obtener_configuracion('nombre_oficina') or 'SISTEMA DE RIEGO'
+    c.setFillColor(colors.white)
+    c.setFont("Helvetica-Bold", 20)
+    c.drawString(5*cm, ypos, "ESTADÍSTICAS DEL SISTEMA")
+    
+    ypos -= 1*cm
+    c.setFillColor(colors.black)
+    nombre_oficina = obtener_configuracion("nombre_oficina") or "SISTEMA DE RIEGO"
     c.setFont("Helvetica", 12)
-    c.drawString(5*cm, y_pos, nombre_oficina)
-    y_pos -= 0.4*cm
+    c.drawString(5*cm, ypos, nombre_oficina)
     
+    ypos -= 0.4*cm
     c.setFont("Helvetica", 10)
-    c.drawString(5*cm, y_pos, f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-    y_pos -= 1*cm
+    c.drawString(5*cm, ypos, f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
     
-    # Línea separadora
-    c.line(2*cm, y_pos, ancho - 2*cm, y_pos)
-    y_pos -= 1*cm
+    ypos -= 1.5*cm
     
-    # ===== ESTADÍSTICAS GENERALES =====
+    # ===== SECCIÓN 1: RESUMEN GENERAL =====
+    c.setFillColor(colors.HexColor("#4472C4"))
     c.setFont("Helvetica-Bold", 14)
-    c.drawString(2*cm, y_pos, "📊 ESTADÍSTICAS GENERALES")
-    y_pos -= 0.7*cm
+    c.drawString(2*cm, ypos, "📊 RESUMEN GENERAL")
+    ypos -= 0.7*cm
     
-    # Crear tabla de estadísticas generales
+    # Preparar datos para la tabla
     datos_generales = [
-        ['Indicador', 'Valor'],
-        ['Total de Campesinos', str(estadisticas.get('total_campesinos', 0))],
-        ['Total de Lotes', str(estadisticas.get('total_lotes', 0))],
-        ['Superficie Total', f"{estadisticas.get('superficie_total', 0):.2f} ha"],
-        ['Siembras Activas', str(estadisticas.get('siembras_activas', 0))],
-        ['Total de Recibos', str(estadisticas.get('total_recibos', 0))],
-        ['Ingresos Totales', f"${estadisticas.get('ingresos_totales', 0):,.2f}"],
+        ["Indicador", "Valor"],
+        ["Total de Campesinos", str(estadisticas.get("total_campesinos", 0))],
+        ["Total de Lotes", str(estadisticas.get("total_lotes", 0))],
+        ["Superficie Total", f"{estadisticas.get('superficie_total', 0):.2f} ha"],
+        ["Hectáreas Sembradas", f"{estadisticas.get('hectareas_sembradas', 0):.2f} ha"],
+        ["Hectáreas Sin Sembrar", f"{estadisticas.get('hectareas_sin_sembrar', 0):.2f} ha"],
+        ["Porcentaje Sembrado", f"{estadisticas.get('porcentaje_sembrado', 0):.1f}%"],
+        ["Siembras Activas", str(estadisticas.get("siembras_activas", 0))],
+        ["Campesinos Sin Siembra", str(estadisticas.get("campesinos_sin_siembra", 0))],
+        ["Total de Recibos", str(estadisticas.get("total_recibos", 0))],
+        ["Ingresos Totales", f"${estadisticas.get('ingresos_totales', 0):,.2f}"],
     ]
     
-    tabla_general = Table(datos_generales, colWidths=[8*cm, 6*cm])
+    tabla_general = Table(datos_generales, colWidths=[10*cm, 6*cm])
     tabla_general.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')),
+        # Encabezado
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#4472C4")),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, 0), 11),
         ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        
+        # Cuerpo
         ('BACKGROUND', (0, 1), (-1, -1), colors.white),
         ('GRID', (0, 0), (-1, -1), 1, colors.grey),
         ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
         ('FONTSIZE', (0, 1), (-1, -1), 10),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F0F0F0')]),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#F0F0F0")]),
+        ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
     ]))
     
     tabla_general.wrapOn(c, ancho, alto)
-    tabla_general.drawOn(c, 2*cm, y_pos - 4*cm)
-    y_pos -= 5*cm
+    altura_tabla = len(datos_generales) * 0.6 * cm
+    tabla_general.drawOn(c, 2*cm, ypos - altura_tabla)
+    ypos -= altura_tabla + 1.2*cm
     
-    # ===== ESTADÍSTICAS POR CULTIVO =====
+    # ===== SECCIÓN 2: ESTADÍSTICAS POR CULTIVO =====
+    if ypos < 8*cm:
+        c.showPage()
+        ypos = alto - 2*cm
+    
+    c.setFillColor(colors.HexColor("#70AD47"))
     c.setFont("Helvetica-Bold", 14)
-    c.drawString(2*cm, y_pos, "🌱 ESTADÍSTICAS POR CULTIVO")
-    y_pos -= 0.7*cm
+    c.drawString(2*cm, ypos, "🌾 ESTADÍSTICAS POR CULTIVO")
+    ypos -= 0.7*cm
     
     if estadisticas_cultivo:
-        datos_cultivos = [['Cultivo', 'Siembras', 'Superficie (ha)', 'Recibos', 'Ingresos']]
+        datos_cultivos = [["Cultivo", "Campesinos", "Superficie (ha)", "Recibos", "Ingresos"]]
         
         for cultivo in estadisticas_cultivo:
             datos_cultivos.append([
-                cultivo['cultivo'],
-                str(cultivo['num_siembras']),
+                cultivo["cultivo"],
+                str(cultivo["num_siembras"]),
                 f"{cultivo['superficie_total']:.2f}",
-                str(cultivo['num_recibos']),
+                str(cultivo["num_recibos"]),
                 f"${cultivo['ingresos_totales']:,.2f}"
             ])
         
-        tabla_cultivos = Table(datos_cultivos, colWidths=[3.5*cm, 2.5*cm, 3*cm, 2.5*cm, 3.5*cm])
+        tabla_cultivos = Table(datos_cultivos, colWidths=[4*cm, 3*cm, 3.5*cm, 2.5*cm, 3*cm])
         tabla_cultivos.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#70AD47')),
+            # Encabezado
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#70AD47")),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            
+            # Cuerpo
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#E8F5E9")]),
+            ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+        ]))
+        
+        altura_tabla = len(datos_cultivos) * 0.6 * cm
+        tabla_cultivos.wrapOn(c, ancho, alto)
+        tabla_cultivos.drawOn(c, 2*cm, ypos - altura_tabla)
+        ypos -= altura_tabla + 1*cm
+    else:
+        c.setFont("Helvetica", 10)
+        c.drawString(2*cm, ypos, "No hay datos de cultivos disponibles")
+        ypos -= 1*cm
+    
+    # ===== SECCIÓN 3: DISTRIBUCIÓN DE SUPERFICIES =====
+    if ypos < 10*cm:
+        c.showPage()
+        ypos = alto - 2*cm
+    
+    c.setFillColor(colors.HexColor("#FFC000"))
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(2*cm, ypos, "📈 DISTRIBUCIÓN DE SUPERFICIES")
+    ypos -= 0.7*cm
+    
+    if estadisticas_cultivo:
+        datos_distr = [["Cultivo", "Superficie (ha)", "% del Total"]]
+        total_superficie = estadisticas.get('hectareas_sembradas', 0)
+        
+        for cultivo in estadisticas_cultivo:
+            sup = cultivo['superficie_total']
+            porcentaje = (sup / total_superficie * 100) if total_superficie > 0 else 0
+            datos_distr.append([
+                cultivo["cultivo"],
+                f"{sup:.2f}",
+                f"{porcentaje:.1f}%"
+            ])
+        
+        tabla_distr = Table(datos_distr, colWidths=[8*cm, 4*cm, 4*cm])
+        tabla_distr.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#FFC000")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 10),
@@ -993,22 +1061,21 @@ def generar_pdf_estadisticas(estadisticas: Dict, estadisticas_cultivo: List[Dict
             ('GRID', (0, 0), (-1, -1), 1, colors.grey),
             ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
             ('FONTSIZE', (0, 1), (-1, -1), 9),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#E8F5E9')]),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#FFF8E1")]),
+            ('ALIGN', (0, 1), (0, -1), 'LEFT'),
         ]))
         
-        altura_tabla = len(datos_cultivos) * 0.6 * cm
-        tabla_cultivos.wrapOn(c, ancho, alto)
-        tabla_cultivos.drawOn(c, 2*cm, y_pos - altura_tabla)
-        y_pos -= altura_tabla + 1*cm
+        altura_tabla = len(datos_distr) * 0.6 * cm
+        tabla_distr.wrapOn(c, ancho, alto)
+        tabla_distr.drawOn(c, 2*cm, ypos - altura_tabla)
     
     # ===== PIE DE PÁGINA =====
     c.setFont("Helvetica-Oblique", 8)
     c.setFillColor(colors.grey)
-    c.drawCentredString(ancho/2, 1.5*cm, f"Página 1 - Generado el {datetime.now().strftime('%d/%m/%Y a las %H:%M:%S')}")
+    c.drawCentredString(ancho/2, 1.5*cm, f"Generado el {datetime.now().strftime('%d/%m/%Y a las %H:%M:%S')}")
     
     c.save()
-    
-    print(f"✅ PDF de estadísticas generado: {ruta_pdf}")
+    print(f"✓ PDF de estadísticas generado: {ruta_pdf}")
     return ruta_pdf
 
 

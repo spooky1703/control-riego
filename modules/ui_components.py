@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional, Dict, List
 import os
 import time
-
+import platform
 # Importaciones de módulos propios
 from modules.models import (
     buscar_campesino, obtener_campesino_por_id, crear_campesino,
@@ -1330,21 +1330,23 @@ class VentanaDetalleDia:
         except Exception as e:
             messagebox.showerror("Error", f"Error al reimprimir:\n{str(e)}")
     
-    def exportar_excel(self):
+    def exportarexcel(self):
         """Exporta los recibos a Excel"""
         try:
-            recibos = obtener_recibos_dia(self.fecha_actual)
+            recibos = obtenerrecibosdia(self.fechaactual)
             if not recibos:
                 messagebox.showinfo("Información", "No hay recibos para exportar")
                 return
             
-            fecha_archivo = datetime.now().strftime('%Y%m%d')
-            filename = f"recibos_{fecha_archivo}.xlsx"
-            filepath = exportar_a_excel(recibos, filename)
+            # CORRECCIÓN: Usar self.fechaactual en lugar de datetime.now()
+            # Esto mantiene consistencia con los PDFs que también usan la fecha consultada
+            fechaarchivo = datetime.strptime(self.fechaactual, "%Y-%m-%d").strftime("%Y%m%d")
+            filename = f"recibos_{fechaarchivo}.xlsx"  # Agregado guión bajo para claridad
             
+            filepath = exportaraexcel(recibos, filename)
             messagebox.showinfo("Éxito", f"Archivo exportado:\n{filepath}")
         except Exception as e:
-            messagebox.showerror("Error", f"Error al exportar:\n{str(e)}")
+            messagebox.showerror("Error", f"Error al exportar:{str(e)}")
 
 # ==================== FORMULARIO CAMPESINO ====================
 
@@ -2120,9 +2122,9 @@ class VentanaEstadisticas:
         VentanaEstadisticas(self.ventana.master)
 
     def exportar_pdf(self):
-        """Exporta estadísticas a PDF"""
+        """Exporta estadísticas a PDF profesional"""
         try:
-            from modules.reports import generar_pdf_estadisticas
+            from modules.reports import generar_pdf_estadisticas  # CON GUIONES BAJOS
             from modules.models import obtener_estadisticas_generales
             
             # Obtener estadísticas generales
@@ -2130,29 +2132,32 @@ class VentanaEstadisticas:
             
             # Construir lista de estadísticas por cultivo desde los datos que ya tenemos
             estadisticas_cultivo = []
-            
             for cultivo in estadisticas['hectareas_por_cultivo'].keys():
                 estadisticas_cultivo.append({
                     'cultivo': cultivo,
                     'num_siembras': estadisticas['siembras_por_cultivo'].get(cultivo, 0),
                     'superficie_total': estadisticas['hectareas_por_cultivo'].get(cultivo, 0),
-                    'num_recibos': 0,  # No tenemos este dato fácilmente, dejarlo en 0
-                    'ingresos_totales': 0  # No tenemos este dato fácilmente, dejarlo en 0
+                    'num_recibos': 0,  # No tenemos este dato fácilmente
+                    'ingresos_totales': 0  # No tenemos este dato fácilmente
                 })
             
+            # Generar PDF con diseño profesional
             ruta_pdf = generar_pdf_estadisticas(estadisticas, estadisticas_cultivo)
             
             messagebox.showinfo("Éxito", 
-                            f"PDF generado correctamente\n\n"
-                            f"Archivo: {os.path.basename(ruta_pdf)}")
+                f"PDF generado correctamente\n\n"
+                f"Archivo: {os.path.basename(ruta_pdf)}")
             
+            # Abrir automáticamente el PDF
             from modules.reports import abrir_pdf
             abrir_pdf(ruta_pdf)
             
         except Exception as e:
+            import traceback
+            print(traceback.format_exc())
             messagebox.showerror("Error", f"Error al generar PDF:\n{str(e)}")
 
-
+####
 class VentanaRenombrarCampesino:
     """Ventana para renombrar el dueño de un lote"""
     
