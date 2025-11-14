@@ -1186,7 +1186,7 @@ class VentanaDetalleDia:
         
         ttk.Button(frame_acciones,
                    text="📥 Exportar a Excel",
-                   command=self.exportar_excel).pack(side=tk.LEFT, padx=5)
+                   command=self.exportarexcel).pack(side=tk.LEFT, padx=5)
         
         ttk.Button(frame_acciones,
                    text="🔄 Actualizar",
