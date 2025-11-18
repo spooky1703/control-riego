@@ -34,6 +34,12 @@ from modules.reports import (
     generar_reporte_diario, abrir_pdf, exportar_a_excel, obtener_impresoras_disponibles,
     generar_corte_caja_excel  
 )
+from modules.cuotas import (
+    crear_tipo_cuota, obtener_tipos_cuota_activos, obtener_todas_cuotas_con_estado,
+    asignar_cuota_a_campesino, asignar_cuota_masiva, obtener_cuotas_campesino,
+    obtener_cuotas_pendientes_campesino, obtener_resumen_cuota, pagar_cuota,
+    obtener_recibo_cuota, obtener_recibos_cuotas_dia, obtener_estadisticas_generales_cuotas
+)
 
 # Lista de cultivos comunes
 CULTIVOS = ['MAÍZ', 'FRIJOL', 'FRIJOL EJOTERO','TRIGO', 'SORGO', 'ALFALFA', 'CHILE', 'TOMATE', 'CEBOLLA', 'AJO', 'NABO' ,'AVENA','HABA','CALABAZA','CEBADA','ARBOL FRUTAL','PASTO','BROCOLI','COLIFLOR']
@@ -262,6 +268,9 @@ class VentanaPrincipal:
         ttk.Button(frame_botones, text="💧 Riego",
                    command=lambda: self.abrir_ventana_venta('riego'),
                    width=12).pack(side=tk.LEFT, padx=2, pady=2)
+        
+        ttk.Button(frame_botones, text="💰 Cuota", command=self.abrir_gestionar_cuotas, width=12).pack(side=tk.LEFT, padx=2, pady=2)
+        
         ttk.Button(frame_botones, text="📋 Detalle",
                    command=self.abrir_detalle_dia,
                    width=12).pack(side=tk.LEFT, padx=2, pady=2)
@@ -439,6 +448,10 @@ class VentanaPrincipal:
     def generar_reporte_dia(self):
         """Abre el gestor de reportes"""
         VentanaGestorReportes(self.root, self.fecha_actual)
+
+    def abrir_gestionar_cuotas(self):
+        """Abre la ventana de gestión de cuotas"""
+        VentanaGestionarCuotas(self.root, self)
 
     def cerrar_dia_dialog(self):
         """Diálogo para cerrar el día"""
@@ -1188,6 +1201,9 @@ class VentanaDetalleDia:
                    text="📥 Exportar a Excel",
                    command=self.exportarexcel).pack(side=tk.LEFT, padx=5)
         
+        ttk.Button(frame_acciones, text="💰 Recaudación Cuotas Hoy", command=self.exportar_cuotas_dia, width=22).pack(side=tk.LEFT, padx=5)
+
+        
         ttk.Button(frame_acciones,
                    text="🔄 Actualizar",
                    command=self.cargar_recibos).pack(side=tk.LEFT, padx=5)
@@ -1329,6 +1345,23 @@ class VentanaDetalleDia:
                     pass
         except Exception as e:
             messagebox.showerror("Error", f"Error al reimprimir:\n{str(e)}")
+    
+    def exportar_cuotas_dia(self):
+        """Exporta reporte de cuotas cobradas hoy"""
+        try:
+            from modules.reports import generar_reporte_cuotas_dia_pdf
+            
+            pdf_path = generar_reporte_cuotas_dia_pdf()
+            
+            from modules.reports import abrir_pdf
+            abrir_pdf(pdf_path)
+            
+            messagebox.showinfo("Éxito", 
+                                f"Reporte de cuotas del día generado correctamente\n"
+                                f"Ruta: {pdf_path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al generar reporte de cuotas:\n{str(e)}")
+
     
     def exportarexcel(self):
         """Exporta los recibos a Excel"""
@@ -1607,6 +1640,33 @@ class VentanaHistorial:
         self.tree_recibos.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar_r.pack(side=tk.RIGHT, fill=tk.Y)
         
+        # ✅ FRAME DE CUOTAS DE COOPERACIÓN
+        frame_cuotas = ttk.LabelFrame(self.frame_principal, text="Cuotas de Cooperación", padding=10)
+        frame_cuotas.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        # Lista de cuotas
+        columnas_cuotas = ('nombre_cuota', 'monto', 'estado', 'fecha_pago')
+        self.tree_cuotas = ttk.Treeview(frame_cuotas, columns=columnas_cuotas, show='headings', height=8)
+
+        self.tree_cuotas.heading('nombre_cuota', text='Cuota')
+        self.tree_cuotas.heading('monto', text='Monto')
+        self.tree_cuotas.heading('estado', text='Estado')
+        self.tree_cuotas.heading('fecha_pago', text='Fecha Pago')
+
+        self.tree_cuotas.column('nombre_cuota', width=200)
+        self.tree_cuotas.column('monto', width=100)
+        self.tree_cuotas.column('estado', width=100)
+        self.tree_cuotas.column('fecha_pago', width=120)
+
+        scrollbar_cuotas = ttk.Scrollbar(frame_cuotas, orient=tk.VERTICAL, command=self.tree_cuotas.yview)
+        self.tree_cuotas.configure(yscroll=scrollbar_cuotas.set)
+
+        self.tree_cuotas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar_cuotas.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # ✅ Bind doble click para pagar (AHORA COMO MÉTODO DE LA CLASE)
+        self.tree_cuotas.bind('<Double-1>', self.pagar_cuota_dobleclick)
+        
         # Botones
         frame_botones = ttk.Frame(self.frame_principal)
         frame_botones.pack(fill=tk.X, padx=10, pady=10)
@@ -1620,7 +1680,7 @@ class VentanaHistorial:
                    command=self.cargar_historial).pack(side=tk.LEFT, padx=5)
     
     def cargar_historial(self):
-        """Carga el historial de siembras y recibos"""
+        """Carga el historial de siembras, recibos Y CUOTAS"""
         # Cargar siembras
         self.tree_siembras.delete(*self.tree_siembras.get_children())
         siembras = obtener_historial_siembras(self.campesino['id'])
@@ -1650,6 +1710,68 @@ class VentanaHistorial:
                 r['numero_riego'],
                 f"${r['costo']:.2f}"
             ), tags=(str(r['id']),))
+        
+        # ✅ CARGAR CUOTAS (AHORA AQUÍ, NO EN crear_widgets)
+        self.tree_cuotas.delete(*self.tree_cuotas.get_children())
+        
+        try:
+            from modules.cuotas import obtener_cuotas_campesino
+            cuotas = obtener_cuotas_campesino(self.campesino['id'])
+
+            for cuota in cuotas:
+                estado = "✅ PAGADO" if cuota['pagado'] else "⏳ PENDIENTE"
+                fecha_pago = cuota['fecha_pago'] if cuota['fecha_pago'] else "-"
+                
+                self.tree_cuotas.insert('', tk.END,
+                                values=(
+                                    cuota['nombre_tipo_cuota'],
+                                    f"${cuota['monto']:.2f}",
+                                    estado,
+                                    fecha_pago
+                                ),
+                                tags=(str(cuota['id']), str(cuota['pagado'])))
+        except Exception as e:
+            print(f"Error al cargar cuotas: {e}")
+    
+    def pagar_cuota_dobleclick(self, event):
+        """Maneja el doble click en una cuota para pagarla"""
+        selection = self.tree_cuotas.selection()
+        if not selection:
+            return
+        
+        item = self.tree_cuotas.item(selection[0])
+        cuota_id = int(item['tags'][0])
+        pagado = int(item['tags'][1])
+        
+        if pagado:
+            messagebox.showinfo("Información", "Esta cuota ya fue pagada")
+            return
+        
+        if messagebox.askyesno("Confirmar Pago", "¿Marcar esta cuota como PAGADA y generar recibo?"):
+            try:
+                from modules.cuotas import pagar_cuota
+                from modules.reports import generar_recibo_cuota_pdf_temporal, abrir_pdf, imprimir_recibo_y_limpiar
+                
+                resultado = pagar_cuota(cuota_id)
+                
+                # Generar PDF
+                pdf_path = generar_recibo_cuota_pdf_temporal(resultado['recibo_id'])
+                abrir_pdf(pdf_path)
+                
+                if messagebox.askyesno("Imprimir", "¿Desea imprimir el recibo?"):
+                    imprimir_recibo_y_limpiar(pdf_path)
+                else:
+                    try:
+                        os.remove(pdf_path)
+                    except:
+                        pass
+                
+                messagebox.showinfo("Éxito", "Cuota pagada correctamente")
+                # Recargar
+                self.cargar_historial()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Error al pagar cuota:\n{str(e)}")
     
     def reimprimir_recibo(self):
         """Reimprime el recibo seleccionado - RECIBOS TEMPORALES"""
@@ -1674,6 +1796,7 @@ class VentanaHistorial:
                     pass
         except Exception as e:
             messagebox.showerror("Error", f"Error al reimprimir:\n{str(e)}")
+
 
 # ==================== DIÁLOGO DE CONFIGURACIÓN ====================
 
@@ -2618,33 +2741,28 @@ class VentanaGestorReportes:
         self.cargar_reportes()
     
     def crear_widgets(self):
-        frame = ttk.Frame(self.ventana, padding="10")
+        frame = ttk.Frame(self.ventana, padding=10)
         frame.pack(fill=tk.BOTH, expand=True)
         
-        # Título
-        ttk.Label(frame, text="📊 GESTOR DE REPORTES",
-                 font=('Helvetica', 14, 'bold')).pack(pady=10)
+        ttk.Label(frame, text="GESTOR DE REPORTES", font=("Helvetica", 14, "bold")).pack(pady=10)
         
         # Frame de botones superiores
-        frame_btns_sup = ttk.Frame(frame)
-        frame_btns_sup.pack(fill=tk.X, pady=10)
+        frame_btnssup = ttk.Frame(frame)
+        frame_btnssup.pack(fill=tk.X, pady=10)
         
-        ttk.Button(frame_btns_sup, text="📊 Generar Corte de Caja (Excel)",
-          command=self.generar_corte_caja,
-          width=30).pack(side=tk.LEFT, padx=5)
-
+        ttk.Button(frame_btnssup, text="📊 Generar Corte de Caja Excel", 
+                command=self.generar_corte_caja, width=30).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_btnssup, text="📄 Generar Reporte de Hoy", 
+                command=self.generar_nuevo_reporte, width=25).pack(side=tk.LEFT, padx=5)
         
-        ttk.Button(frame_btns_sup, text="➕ Generar Reporte de Hoy",
-                  command=self.generar_nuevo_reporte,
-                  width=25).pack(side=tk.LEFT, padx=5)
+        # ✅ AGREGAR ESTE BOTÓN AQUÍ
+        ttk.Button(frame_btnssup, text="💰 Recaudación Cuotas Hoy", 
+                command=self.generar_reporte_cuotas_dia, width=25).pack(side=tk.LEFT, padx=5)
         
-        ttk.Button(frame_btns_sup, text="🔄 Actualizar Lista",
-                  command=self.cargar_reportes,
-                  width=20).pack(side=tk.LEFT, padx=5)
-        
-        ttk.Button(frame_btns_sup, text="📁 Abrir Carpeta",
-                  command=self.abrir_carpeta_reportes,
-                  width=20).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_btnssup, text="🔄 Actualizar Lista", 
+                command=self.cargar_reportes, width=20).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_btnssup, text="📁 Abrir Carpeta", 
+                command=self.abrir_carpeta_reportes, width=20).pack(side=tk.LEFT, padx=5)
         
         # Frame de lista de reportes
         frame_lista = ttk.LabelFrame(frame, text="Reportes Disponibles", padding="10")
@@ -2697,102 +2815,71 @@ class VentanaGestorReportes:
                   width=15).pack(side=tk.RIGHT, padx=5)
     
     def cargar_reportes(self):
-        """Carga la lista de reportes desde el directorio"""
+        """Carga los reportes existentes ORGANIZADOS POR CATEGORÍA"""
         self.tree.delete(*self.tree.get_children())
-        reportes_dir = os.path.join("database", "reportes")
+        
+        reportes_dir = os.path.join('database', 'reportes')
         
         if not os.path.exists(reportes_dir):
             return
         
-        # Obtener todos los archivos PDF y Excel
-        archivos = [f for f in os.listdir(reportes_dir) if f.endswith((".pdf", ".xlsx"))]
-        archivos.sort(reverse=True)  # Más recientes primero
+        archivos = [f for f in os.listdir(reportes_dir) if f.endswith(('.pdf', '.xlsx'))]
+        
+        # ✅ SEPARAR POR CATEGORÍAS
+        excel_ventas = []
+        pdf_ventas = []
+        pdf_estadisticas = []
+        pdf_cuotas = []
         
         for archivo in archivos:
-            ruta_completa = os.path.join(reportes_dir, archivo)
+            ruta = os.path.join(reportes_dir, archivo)
+            fecha_modificacion = datetime.fromtimestamp(os.path.getmtime(ruta))
+            fecha_str = fecha_modificacion.strftime('%Y-%m-%d %H:%M')
+            tamano = os.path.getsize(ruta) / 1024  # KB
             
-            # Obtener tamaño del archivo
-            tamano_bytes = os.path.getsize(ruta_completa)
-            if tamano_bytes < 1024:
-                tamano = f"{tamano_bytes} B"
-            elif tamano_bytes < 1024 * 1024:
-                tamano = f"{tamano_bytes / 1024:.1f} KB"
-            else:
-                tamano = f"{tamano_bytes / (1024 * 1024):.1f} MB"
-            
-            # Extraer fecha del nombre del archivo
-            try:
-                # Extraer fecha según el tipo de archivo
-                if archivo.startswith("reporte_diario_"):
-                    # Reportes diarios: reporte_diario_YYYYMMDD.pdf
-                    fecha_str = archivo.replace("reporte_diario_", "").replace(".pdf", "")
-                    if len(fecha_str) == 8:
-                        fecha = datetime.strptime(fecha_str, "%Y%m%d").strftime("%d/%m/%Y")
-                    else:
-                        fecha = "Desconocido"
-                
-                elif archivo.startswith("corte_caja_"):
-                    # Cortes de caja: corte_caja_YYYYMMDD.xlsx
-                    fecha_str = archivo.replace("corte_caja_", "").replace(".xlsx", "")
-                    if len(fecha_str) == 8:
-                        fecha = datetime.strptime(fecha_str, "%Y%m%d").strftime("%d/%m/%Y")
-                    else:
-                        fecha = "Desconocido"
-                
-                elif archivo.startswith("estadisticas_"):
-                    # Estadísticas: estadisticas_YYYYMMDD_HHMMSS.pdf
-                    fecha_str = archivo.replace("estadisticas_", "").replace(".pdf", "")
-                    # Tomar solo la parte de fecha (primeros 8 caracteres)
-                    if len(fecha_str) >= 8:
-                        fecha = datetime.strptime(fecha_str[:8], "%Y%m%d").strftime("%d/%m/%Y")
-                    else:
-                        fecha = "Desconocido"
-                
-                elif archivo.startswith("auditoria_"):
-                    # Auditorías: auditoria_YYYYMMDD_HHMMSS.pdf
-                    fecha_str = archivo.replace("auditoria_", "").replace(".pdf", "")
-                    if len(fecha_str) >= 8:
-                        fecha = datetime.strptime(fecha_str[:8], "%Y%m%d").strftime("%d/%m/%Y")
-                    else:
-                        fecha = "Desconocido"
-                
-                elif archivo.startswith("recibos_"):
-                    # Recibos Excel: recibos_YYYYMMDD.xlsx
-                    fecha_str = archivo.replace("recibos_", "").replace(".xlsx", "")
-                    if len(fecha_str) == 8:
-                        fecha = datetime.strptime(fecha_str, "%Y%m%d").strftime("%d/%m/%Y")
-                    else:
-                        fecha = "Desconocido"
-                
-                else:
-                    # Archivos con formato desconocido
-                    fecha = "Desconocido"
-            
-            except Exception:
-                fecha = "Desconocido"
-            
-            # Obtener datos del reporte si es posible
-            num_recibos = "-"
-            total_str = "-"
-            
-            try:
-                # Intentar extraer fecha para consultar recibos (solo para reportes diarios y cortes)
-                if archivo.startswith("reporte_diario_") or archivo.startswith("corte_caja_"):
-                    fecha_str_base = archivo.replace("reporte_diario_", "").replace("corte_caja_", "")
-                    fecha_str_base = fecha_str_base.replace(".pdf", "").replace(".xlsx", "")
-                    
-                    if len(fecha_str_base) == 8:
-                        fecha_consulta = datetime.strptime(fecha_str_base, "%Y%m%d").strftime("%Y-%m-%d")
-                        recibos = obtener_recibos_dia(fecha_consulta)
-                        num_recibos = len(recibos)
-                        total = sum(r["costo"] for r in recibos)
-                        total_str = f"${total:,.2f}"
-            except:
-                pass
-            
-            self.tree.insert("", tk.END, 
-                            values=(fecha, archivo, tamano, num_recibos, total_str),
-                            tags=(ruta_completa,))
+            # Clasificar por tipo
+            if archivo.endswith('.xlsx'):
+                excel_ventas.append((archivo, fecha_str, tamano, ruta))
+            elif 'estadisticas' in archivo.lower():
+                pdf_estadisticas.append((archivo, fecha_str, tamano, ruta))
+            elif 'cuota' in archivo.lower():
+                pdf_cuotas.append((archivo, fecha_str, tamano, ruta))
+            elif archivo.endswith('.pdf'):
+                pdf_ventas.append((archivo, fecha_str, tamano, ruta))
+        
+        # ✅ INSERTAR CON ENCABEZADOS DE CATEGORÍA
+        
+        # EXCEL VENTA DEL DÍA
+        if excel_ventas:
+            self.tree.insert('', tk.END, values=('📊 EXCEL-VENTA DÍA', '', '', ''), tags=('header',))
+            for archivo, fecha, tamano, ruta in sorted(excel_ventas, key=lambda x: x[1], reverse=True):
+                self.tree.insert('', tk.END, 
+                                values=(archivo, fecha, f"{tamano:.1f} KB", '📄'),
+                                tags=(ruta,))
+        
+        # PDF VENTA DEL DÍA
+        if pdf_ventas:
+            self.tree.insert('', tk.END, values=('📄 PDF-VENTA DÍA', '', '', ''), tags=('header',))
+            for archivo, fecha, tamano, ruta in sorted(pdf_ventas, key=lambda x: x[1], reverse=True):
+                self.tree.insert('', tk.END, 
+                                values=(archivo, fecha, f"{tamano:.1f} KB", '📄'),
+                                tags=(ruta,))
+        
+        # ESTADÍSTICAS PDF
+        if pdf_estadisticas:
+            self.tree.insert('', tk.END, values=('📊 ESTADÍSTICAS PDF', '', '', ''), tags=('header',))
+            for archivo, fecha, tamano, ruta in sorted(pdf_estadisticas, key=lambda x: x[1], reverse=True):
+                self.tree.insert('', tk.END, 
+                                values=(archivo, fecha, f"{tamano:.1f} KB", '📄'),
+                                tags=(ruta,))
+        
+        # CUOTAS PDF
+        if pdf_cuotas:
+            self.tree.insert('', tk.END, values=('💰 CUOTAS PDF', '', '', ''), tags=('header',))
+            for archivo, fecha, tamano, ruta in sorted(pdf_cuotas, key=lambda x: x[1], reverse=True):
+                self.tree.insert('', tk.END, 
+                                values=(archivo, fecha, f"{tamano:.1f} KB", '📄'),
+                                tags=(ruta,))
 
     
     def generar_nuevo_reporte(self):
@@ -2940,6 +3027,27 @@ class VentanaGestorReportes:
                 subprocess.run(['xdg-open', reportes_dir])
         except Exception as e:
             messagebox.showerror("Error", f"Error al abrir carpeta:\n{str(e)}")
+
+    def generar_reporte_cuotas_dia(self):
+        """Genera reporte PDF de cuotas cobradas hoy"""
+        try:
+            from modules.reports import generar_reporte_cuotas_dia_pdf, abrir_pdf
+            
+            pdf_path = generar_reporte_cuotas_dia_pdf()
+            abrir_pdf(pdf_path)
+            
+            messagebox.showinfo("Éxito", 
+                                f"Reporte de cuotas generado correctamente\n"
+                                f"Ruta: {pdf_path}")
+            
+            # Recargar lista de reportes
+            self.cargar_reportes()
+            
+        except ValueError as e:
+            messagebox.showwarning("Sin Datos", str(e))
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al generar reporte de cuotas:\n{str(e)}")
+
 
 # ==================== CLASE NUEVA: FORMULARIO NUEVO CAMPESINO ====================
 
@@ -3156,3 +3264,700 @@ class VentanaFormularioNuevoCampesino:
                 "❌ Error al Guardar",
                 f"No se pudo crear el ejidatario:\n\n{str(e)}"
             )
+
+
+class VentanaGestionarCuotas:
+    """Ventana principal para gestionar cuotas de cooperación"""
+    
+    def __init__(self, parent, ventana_principal):
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title("💰 Gestionar Cuotas de Cooperación")
+        self.ventana.geometry("800x600")
+        self.ventana.transient(parent)
+        self.ventana.grab_set()
+        self.ventana_principal = ventana_principal
+        
+        self.canvas, self.frame_principal = crear_ventana_scrollable(self.ventana, None)
+        self.crear_widgets()
+        self.cargar_tipos_cuota()
+    
+    def crear_widgets(self):
+        """Crea los widgets de la ventana"""
+        frame_principal = ttk.Frame(self.frame_principal, padding=20)
+        frame_principal.pack(fill=tk.BOTH, expand=True)
+        
+        # TÍTULO
+        ttk.Label(frame_principal, text="GESTIÓN DE CUOTAS DE COOPERACIÓN", 
+                  font=("Helvetica", 14, "bold")).pack(pady=10)
+        
+        # BOTONES DE ACCIÓN
+        frame_acciones = ttk.Frame(frame_principal)
+        frame_acciones.pack(fill=tk.X, pady=10)
+        
+        ttk.Button(frame_acciones, text="➕ Nueva Cuota", 
+                   command=self.abrir_nueva_cuota, width=20).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_acciones, text="📋 Ver Todas las Cuotas", 
+                   command=self.ver_todas_cuotas, width=20).pack(side=tk.LEFT, padx=5)
+        
+        # LISTA DE TIPOS DE CUOTAS
+        frame_lista = ttk.LabelFrame(frame_principal, text="Cuotas Disponibles", padding=10)
+        frame_lista.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        columnas = ('nombre', 'monto', 'asignados', 'pagados', 'pendientes', 'recaudado')
+        self.tree = ttk.Treeview(frame_lista, columns=columnas, show='headings', height=15)
+        
+        self.tree.heading('nombre', text='Nombre de la Cuota')
+        self.tree.heading('monto', text='Monto')
+        self.tree.heading('asignados', text='Asignados')
+        self.tree.heading('pagados', text='Pagados')
+        self.tree.heading('pendientes', text='Pendientes')
+        self.tree.heading('recaudado', text='Recaudado')
+        
+        self.tree.column('nombre', width=200)
+        self.tree.column('monto', width=80)
+        self.tree.column('asignados', width=80)
+        self.tree.column('pagados', width=80)
+        self.tree.column('pendientes', width=80)
+        self.tree.column('recaudado', width=100)
+        
+        scrollbar = ttk.Scrollbar(frame_lista, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscroll=scrollbar.set)
+        
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Bind doble click
+        self.tree.bind('<Double-1>', self.on_doble_click_cuota)
+        
+        # BOTONES INFERIORES
+        frame_botones = ttk.Frame(frame_principal)
+        frame_botones.pack(fill=tk.X, pady=10)
+        
+        ttk.Button(frame_botones, text="🔄 Actualizar", 
+                   command=self.cargar_tipos_cuota).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="Cerrar", 
+                   command=self.ventana.destroy).pack(side=tk.RIGHT, padx=5)
+    
+    def cargar_tipos_cuota(self):
+        """Carga los tipos de cuota existentes"""
+        from modules.cuotas import obtener_todas_cuotas_con_estado
+        
+        self.tree.delete(*self.tree.get_children())
+        
+        cuotas = obtener_todas_cuotas_con_estado()
+        
+        for cuota in cuotas:
+            self.tree.insert('', tk.END, 
+                            values=(
+                                cuota['nombre'],
+                                f"${cuota['monto']:.2f}",
+                                cuota['total_asignados'] or 0,
+                                cuota['total_pagados'] or 0,
+                                cuota['total_pendientes'] or 0,
+                                f"${cuota['monto_recaudado'] or 0:.2f}"
+                            ),
+                            tags=(str(cuota['id']),))
+    
+    def on_doble_click_cuota(self, event):
+        """Abre el detalle de la cuota seleccionada"""
+        selection = self.tree.selection()
+        if selection:
+            item = self.tree.item(selection[0])
+            tipo_cuota_id = int(item['tags'][0])
+            VentanaDetalleCuota(self.ventana, tipo_cuota_id, self)
+    
+    def abrir_nueva_cuota(self):
+        """Abre ventana para crear nueva cuota"""
+        VentanaNuevaCuota(self.ventana, self)
+    
+    def ver_todas_cuotas(self):
+        """Abre ventana con todas las cuotas y su recaudación"""
+        VentanaReporteCuotas(self.ventana)
+
+
+class VentanaNuevaCuota:
+    """Ventana para crear un nuevo tipo de cuota"""
+    
+    def __init__(self, parent, ventana_gestionar):
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title("Nueva Cuota de Cooperación")
+        self.ventana.geometry("500x400")
+        self.ventana.transient(parent)
+        self.ventana.grab_set()
+        self.ventana_gestionar = ventana_gestionar
+        
+        self.crear_widgets()
+    
+    def crear_widgets(self):
+        """Crea los widgets"""
+        frame = ttk.Frame(self.ventana, padding=20)
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(frame, text="CREAR NUEVA CUOTA", font=("Helvetica", 12, "bold")).pack(pady=10)
+        
+        # Formulario
+        frame_form = ttk.LabelFrame(frame, text="Datos de la Cuota", padding=10)
+        frame_form.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(frame_form, text="Nombre de la Cuota:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.entry_nombre = ttk.Entry(frame_form, width=40)
+        self.entry_nombre.grid(row=0, column=1, pady=5, padx=10)
+        self.entry_nombre.focus()
+        
+        ttk.Label(frame_form, text="Tarifa por Hectárea ($):").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.entry_monto = ttk.Entry(frame_form, width=40)
+        self.entry_monto.grid(row=1, column=1, pady=5, padx=10)
+        
+        ttk.Label(frame_form, text="Descripción (opcional):").grid(row=2, column=0, sticky=tk.W, pady=5)
+        self.text_descripcion = tk.Text(frame_form, width=40, height=4)
+        self.text_descripcion.grid(row=2, column=1, pady=5, padx=10)
+        
+        # Asignación
+        frame_asignar = ttk.LabelFrame(frame, text="Asignar Cuota", padding=10)
+        frame_asignar.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(frame_asignar, text="Después de crear la cuota:", 
+                  font=("Helvetica", 9)).pack(anchor=tk.W)
+        
+        self.var_asignar = tk.StringVar(value="manual")
+        ttk.Radiobutton(frame_asignar, text="Asignar manualmente después", 
+                        variable=self.var_asignar, value="manual").pack(anchor=tk.W, pady=2)
+        ttk.Radiobutton(frame_asignar, text="Asignar a TODOS los campesinos ahora", 
+                        variable=self.var_asignar, value="todos").pack(anchor=tk.W, pady=2)
+        
+        # Botones
+        frame_botones = ttk.Frame(frame)
+        frame_botones.pack(pady=20)
+        
+        ttk.Button(frame_botones, text="💾 Crear Cuota", 
+                   command=self.crear_cuota).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="Cancelar", 
+                   command=self.ventana.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def crear_cuota(self):
+        """Crea la nueva cuota"""
+        nombre = self.entry_nombre.get().strip()
+        monto_str = self.entry_monto.get().strip()
+        descripcion = self.text_descripcion.get("1.0", tk.END).strip()
+        
+        if not nombre:
+            messagebox.showerror("Error", "El nombre de la cuota es obligatorio")
+            return
+        
+        if not monto_str:
+            messagebox.showerror("Error", "El monto es obligatorio")
+            return
+        
+        try:
+            monto = float(monto_str)
+            if monto <= 0:
+                messagebox.showerror("Error", "El monto debe ser mayor a 0")
+                return
+        except ValueError:
+            messagebox.showerror("Error", "El monto debe ser un número válido")
+            return
+        
+        try:
+            from modules.cuotas import crear_tipo_cuota, asignar_cuota_masiva
+            from modules.models import obtener_todos_campesinos
+            
+            # Crear tipo de cuota
+            tipo_cuota_id = crear_tipo_cuota(nombre, monto, descripcion)
+            
+            # Asignar a todos si se seleccionó
+            if self.var_asignar.get() == "todos":
+                campesinos = obtener_todos_campesinos()
+                total = asignar_cuota_masiva(tipo_cuota_id, campesinos)
+                
+                messagebox.showinfo("Éxito", 
+                                    f"Cuota '{nombre}' creada correctamente.\n"
+                                    f"Asignada a {total} campesinos.")
+            else:
+                messagebox.showinfo("Éxito", f"Cuota '{nombre}' creada correctamente.")
+            
+            self.ventana_gestionar.cargar_tipos_cuota()
+            self.ventana.destroy()
+            
+        except ValueError as e:
+            messagebox.showerror("Error", str(e))
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al crear cuota:\n{str(e)}")
+
+
+class VentanaDetalleCuota:
+    """Ventana con detalle de una cuota específica"""
+    
+    def __init__(self, parent, tipo_cuota_id, ventana_gestionar):
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title("Detalle de Cuota")
+        self.ventana.geometry("900x650")
+        self.ventana.transient(parent)
+        self.ventana.grab_set()
+        self.tipo_cuota_id = tipo_cuota_id
+        self.ventana_gestionar = ventana_gestionar
+        
+        self.canvas, self.frame_principal = crear_ventana_scrollable(self.ventana, None)
+        self.crear_widgets()
+        self.cargar_detalle()
+    
+    def crear_widgets(self):
+        """Crea los widgets"""
+        frame = ttk.Frame(self.frame_principal, padding=20)
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Título
+        self.label_titulo = ttk.Label(frame, text="", font=("Helvetica", 14, "bold"))
+        self.label_titulo.pack(pady=10)
+        
+        # Resumen
+        frame_resumen = ttk.LabelFrame(frame, text="Resumen", padding=10)
+        frame_resumen.pack(fill=tk.X, pady=10)
+        
+        self.label_resumen = ttk.Label(frame_resumen, text="", font=("Helvetica", 10))
+        self.label_resumen.pack()
+        
+        # Botones de acción
+        frame_acciones = ttk.Frame(frame)
+        frame_acciones.pack(fill=tk.X, pady=10)
+        
+        ttk.Button(frame_acciones, text="➕ Asignar a Campesino", 
+                   command=self.asignar_a_campesino).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_acciones, text="📄 Exportar PDF Recaudación", 
+                   command=self.exportar_pdf).pack(side=tk.LEFT, padx=5)
+        
+        # Lista de campesinos con esta cuota
+        frame_lista = ttk.LabelFrame(frame, text="Campesinos Asignados", padding=10)
+        frame_lista.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        columnas = ('lote', 'nombre', 'barrio', 'monto', 'estado', 'fecha_pago')
+        self.tree = ttk.Treeview(frame_lista, columns=columnas, show='headings', height=15)
+        
+        self.tree.heading('lote', text='Lote')
+        self.tree.heading('nombre', text='Nombre')
+        self.tree.heading('barrio', text='Barrio')
+        self.tree.heading('monto', text='Monto')
+        self.tree.heading('estado', text='Estado')
+        self.tree.heading('fecha_pago', text='Fecha Pago')
+        
+        self.tree.column('lote', width=70)
+        self.tree.column('nombre', width=200)
+        self.tree.column('barrio', width=100)
+        self.tree.column('monto', width=80)
+        self.tree.column('estado', width=100)
+        self.tree.column('fecha_pago', width=100)
+        
+        scrollbar = ttk.Scrollbar(frame_lista, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscroll=scrollbar.set)
+        
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Bind doble click
+        self.tree.bind('<Double-1>', self.on_doble_click_pagar)
+        
+        # Botones
+        frame_botones = ttk.Frame(frame)
+        frame_botones.pack(fill=tk.X, pady=10)
+        
+        ttk.Button(frame_botones, text="🔄 Actualizar", 
+                   command=self.cargar_detalle).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="Cerrar", 
+                   command=self.ventana.destroy).pack(side=tk.RIGHT, padx=5)
+    
+    def cargar_detalle(self):
+        """Carga el detalle de la cuota"""
+        from modules.cuotas import obtener_resumen_cuota, obtener_tipos_cuota_activos
+        from modules.models import get_connection as get_riego_connection
+        
+        # Obtener nombre de la cuota
+        from modules.cuotas import get_cuotas_connection
+        conn = get_cuotas_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT nombre, monto FROM tipos_cuota WHERE id = ?", (self.tipo_cuota_id,))
+        row = cursor.fetchone()
+        
+        if not row:
+            messagebox.showerror("Error", "Cuota no encontrada")
+            self.ventana.destroy()
+            return
+        
+        nombre_cuota = row['nombre']
+        monto_cuota = row['monto']
+        
+        self.label_titulo.config(text=f"Cuota: {nombre_cuota} (${monto_cuota:.2f})")
+        
+        # Obtener resumen
+        resumen = obtener_resumen_cuota(self.tipo_cuota_id)
+        
+        texto_resumen = f"""
+        Total Asignados: {resumen['total_asignados']}
+        Total Pagados: {resumen['total_pagados']} | Monto Recaudado: ${resumen['monto_recaudado']:.2f}
+        Total Pendientes: {resumen['total_pendientes']} | Monto Pendiente: ${resumen['monto_pendiente']:.2f}
+                """
+        self.label_resumen.config(text=texto_resumen.strip())
+        
+        # Cargar campesinos
+        cursor.execute("""
+            SELECT * FROM cuotas_campesinos
+            WHERE tipo_cuota_id = ?
+            ORDER BY pagado ASC, numero_lote ASC
+        """, (self.tipo_cuota_id,))
+        
+        cuotas_campesinos = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        self.tree.delete(*self.tree.get_children())
+        
+        for cuota in cuotas_campesinos:
+            estado = "✅ PAGADO" if cuota['pagado'] else "⏳ PENDIENTE"
+            fecha_pago = cuota['fecha_pago'] if cuota['fecha_pago'] else "-"
+            
+            self.tree.insert('', tk.END,
+                            values=(
+                                cuota['numero_lote'],
+                                cuota['nombre_campesino'],
+                                cuota['barrio'],
+                                f"${cuota['monto']:.2f}",
+                                estado,
+                                fecha_pago
+                            ),
+                            tags=(str(cuota['id']), str(cuota['pagado'])))
+    
+    def on_doble_click_pagar(self, event):
+        """Marca una cuota como pagada al hacer doble click"""
+        selection = self.tree.selection()
+        if not selection:
+            return
+        
+        item = self.tree.item(selection[0])
+        cuota_campesino_id = int(item['tags'][0])
+        pagado = int(item['tags'][1])
+        
+        if pagado:
+            messagebox.showinfo("Información", "Esta cuota ya fue pagada")
+            return
+        
+        # Confirmar pago
+        if messagebox.askyesno("Confirmar Pago", 
+                               "¿Marcar esta cuota como PAGADA y generar recibo?"):
+            try:
+                from modules.cuotas import pagar_cuota
+                
+                resultado = pagar_cuota(cuota_campesino_id)
+                
+                # Generar y mostrar recibo
+                from modules.reports import generar_recibo_cuota_pdf_temporal, abrir_pdf
+                
+                pdf_path = generar_recibo_cuota_pdf_temporal(resultado['recibo_id'])
+                abrir_pdf(pdf_path)
+                
+                if messagebox.askyesno("Imprimir Recibo",
+                                       f"Recibo generado exitosamente\n"
+                                       f"Folio: {resultado['folio']}\n"
+                                       f"Monto: ${resultado['monto']:.2f}\n"
+                                       f"¿Desea imprimir?"):
+                    from modules.reports import imprimir_recibo_y_limpiar
+                    imprimir_recibo_y_limpiar(pdf_path)
+                else:
+                    try:
+                        os.remove(pdf_path)
+                    except:
+                        pass
+                
+                messagebox.showinfo("Éxito", "Cuota pagada correctamente")
+                self.cargar_detalle()
+                self.ventana_gestionar.cargar_tipos_cuota()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Error al pagar cuota:\n{str(e)}")
+    
+    def asignar_a_campesino(self):
+        """Abre ventana para asignar esta cuota a un campesino"""
+        VentanaAsignarCuota(self.ventana, self.tipo_cuota_id, self)
+    
+    def exportar_pdf(self):
+        """Exporta reporte PDF de la recaudación de esta cuota"""
+        try:
+            from modules.reports import generar_reporte_cuota_pdf
+            from modules.cuotas import get_cuotas_connection
+            
+            # Obtener nombre de la cuota
+            conn = get_cuotas_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT nombre FROM tipos_cuota WHERE id = ?", (self.tipo_cuota_id,))
+            row = cursor.fetchone()
+            nombre_cuota = row['nombre'] if row else "Cuota"
+            conn.close()
+            
+            pdf_path = generar_reporte_cuota_pdf(self.tipo_cuota_id)
+            
+            from modules.reports import abrir_pdf
+            abrir_pdf(pdf_path)
+            
+            messagebox.showinfo("Éxito", 
+                                f"Reporte de '{nombre_cuota}' generado correctamente\n"
+                                f"Ruta: {pdf_path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al generar reporte:\n{str(e)}")
+
+
+class VentanaAsignarCuota:
+    """Ventana para asignar una cuota a un campesino específico"""
+    
+    def __init__(self, parent, tipo_cuota_id, ventana_detalle):
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title("Asignar Cuota a Campesino")
+        self.ventana.geometry("600x500")
+        self.ventana.transient(parent)
+        self.ventana.grab_set()
+        self.tipo_cuota_id = tipo_cuota_id
+        self.ventana_detalle = ventana_detalle
+        
+        self.crear_widgets()
+    
+    def crear_widgets(self):
+        """Crea los widgets"""
+        frame = ttk.Frame(self.ventana, padding=20)
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(frame, text="ASIGNAR CUOTA A CAMPESINO", 
+                  font=("Helvetica", 12, "bold")).pack(pady=10)
+        
+        # Búsqueda
+        frame_busqueda = ttk.LabelFrame(frame, text="Buscar Campesino", padding=10)
+        frame_busqueda.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(frame_busqueda, text="Nombre o Lote:").pack(side=tk.LEFT, padx=5)
+        self.entry_busqueda = ttk.Entry(frame_busqueda, width=30)
+        self.entry_busqueda.pack(side=tk.LEFT, padx=5)
+        self.entry_busqueda.bind('<Return>', lambda e: self.buscar())
+        
+        ttk.Button(frame_busqueda, text="🔍 Buscar", 
+                   command=self.buscar).pack(side=tk.LEFT, padx=5)
+        
+        # Lista de campesinos
+        frame_lista = ttk.Frame(frame)
+        frame_lista.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        columnas = ('lote', 'nombre', 'barrio', 'superficie')
+        self.tree = ttk.Treeview(frame_lista, columns=columnas, show='headings', height=15)
+        
+        self.tree.heading('lote', text='Lote')
+        self.tree.heading('nombre', text='Nombre')
+        self.tree.heading('barrio', text='Barrio')
+        self.tree.heading('superficie', text='Superficie')
+        
+        self.tree.column('lote', width=70)
+        self.tree.column('nombre', width=250)
+        self.tree.column('barrio', width=100)
+        self.tree.column('superficie', width=80)
+        
+        scrollbar = ttk.Scrollbar(frame_lista, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscroll=scrollbar.set)
+        
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Botones
+        frame_botones = ttk.Frame(frame)
+        frame_botones.pack(fill=tk.X, pady=10)
+        
+        ttk.Button(frame_botones, text="✅ Asignar Seleccionado", 
+                   command=self.asignar).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="Cancelar", 
+                   command=self.ventana.destroy).pack(side=tk.RIGHT, padx=5)
+        
+        # Cargar todos los campesinos al inicio
+        self.cargar_todos()
+    
+    def cargar_todos(self):
+        """Carga todos los campesinos"""
+        from modules.models import obtener_todos_campesinos
+        
+        self.tree.delete(*self.tree.get_children())
+        
+        campesinos = obtener_todos_campesinos()
+        
+        for camp in campesinos:
+            self.tree.insert('', tk.END,
+                            values=(
+                                camp['numero_lote'],
+                                camp['nombre'],
+                                camp['barrio'],
+                                f"{camp['superficie']:.2f} ha"
+                            ),
+                            tags=(str(camp['id']),))
+    
+    def buscar(self):
+        """Busca campesinos"""
+        from modules.models import buscar_campesino
+        
+        termino = self.entry_busqueda.get().strip()
+        
+        if not termino:
+            self.cargar_todos()
+            return
+        
+        self.tree.delete(*self.tree.get_children())
+        
+        resultados = buscar_campesino(termino)
+        
+        if not resultados:
+            messagebox.showinfo("Sin resultados", "No se encontraron campesinos")
+            return
+        
+        for camp in resultados:
+            self.tree.insert('', tk.END,
+                            values=(
+                                camp['numero_lote'],
+                                camp['nombre'],
+                                camp['barrio'],
+                                f"{camp['superficie']:.2f} ha"
+                            ),
+                            tags=(str(camp['id']),))
+    
+    def asignar(self):
+        """Asigna la cuota al campesino seleccionado"""
+        selection = self.tree.selection()
+        
+        if not selection:
+            messagebox.showwarning("Advertencia", "Debe seleccionar un campesino")
+            return
+        
+        item = self.tree.item(selection[0])
+        campesino_id = int(item['tags'][0])
+        
+        try:
+            from modules.cuotas import asignar_cuota_a_campesino
+            from modules.models import obtener_campesino_por_id
+            
+            campesino = obtener_campesino_por_id(campesino_id)
+            
+            # ✅ PASAR SUPERFICIE para calcular monto proporcional
+            asignar_cuota_a_campesino(
+                campesino_id,
+                campesino['numero_lote'],
+                campesino['nombre'],
+                campesino['barrio'],
+                self.tipo_cuota_id,
+                campesino['superficie']  # ✅ AGREGAR ESTE PARÁMETRO
+            )
+            
+            messagebox.showinfo("Éxito", 
+                                f"Cuota asignada a {campesino['nombre']} correctamente\n"
+                                f"Superficie: {campesino['superficie']} ha")
+            
+            self.ventana_detalle.cargar_detalle()
+            self.ventana.destroy()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al asignar cuota:\n{str(e)}")
+
+
+class VentanaReporteCuotas:
+    """Ventana con reporte general de todas las cuotas"""
+    
+    def __init__(self, parent):
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title("📊 Reporte General de Cuotas")
+        self.ventana.geometry("900x600")
+        self.ventana.transient(parent)
+        
+        self.canvas, self.frame_principal = crear_ventana_scrollable(self.ventana, None)
+        self.crear_widgets()
+        self.cargar_estadisticas()
+    
+    def crear_widgets(self):
+        """Crea los widgets"""
+        frame = ttk.Frame(self.frame_principal, padding=20)
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(frame, text="REPORTE GENERAL DE CUOTAS", 
+                  font=("Helvetica", 14, "bold")).pack(pady=10)
+        
+        # Estadísticas generales
+        frame_stats = ttk.LabelFrame(frame, text="Estadísticas Generales", padding=15)
+        frame_stats.pack(fill=tk.X, pady=10)
+        
+        self.label_stats = ttk.Label(frame_stats, text="", font=("Helvetica", 10))
+        self.label_stats.pack()
+        
+        # Lista de cuotas
+        frame_lista = ttk.LabelFrame(frame, text="Detalle por Cuota", padding=10)
+        frame_lista.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        columnas = ('nombre', 'monto', 'asignados', 'pagados', 'pendientes', 
+                    'recaudado', 'pendiente_cobro')
+        self.tree = ttk.Treeview(frame_lista, columns=columnas, show='headings', height=15)
+        
+        self.tree.heading('nombre', text='Cuota')
+        self.tree.heading('monto', text='Monto Unit.')
+        self.tree.heading('asignados', text='Asignados')
+        self.tree.heading('pagados', text='Pagados')
+        self.tree.heading('pendientes', text='Pendientes')
+        self.tree.heading('recaudado', text='Recaudado')
+        self.tree.heading('pendiente_cobro', text='Por Cobrar')
+        
+        scrollbar = ttk.Scrollbar(frame_lista, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscroll=scrollbar.set)
+        
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Botones
+        frame_botones = ttk.Frame(frame)
+        frame_botones.pack(fill=tk.X, pady=10)
+        
+        ttk.Button(frame_botones, text="📄 Exportar PDF Completo", 
+                   command=self.exportar_pdf_completo).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="Cerrar", 
+                   command=self.ventana.destroy).pack(side=tk.RIGHT, padx=5)
+    
+    def cargar_estadisticas(self):
+        """Carga las estadísticas generales"""
+        from modules.cuotas import obtener_estadisticas_generales_cuotas, obtener_todas_cuotas_con_estado
+        
+        stats = obtener_estadisticas_generales_cuotas()
+        
+        texto = f"""
+        Total de Tipos de Cuotas: {stats['total_tipos_cuotas']}
+        Total de Cuotas Asignadas: {stats['total_cuotas_asignadas']}
+        Cuotas Pagadas: {stats['total_pagadas']} | Monto Recaudado: ${stats['monto_recaudado']:.2f}
+        Cuotas Pendientes: {stats['total_pendientes']} | Monto Pendiente: ${stats['monto_pendiente']:.2f}
+        Monto Total: ${stats['monto_total']:.2f}
+                """
+        
+        self.label_stats.config(text=texto.strip())
+        
+        # Cargar cuotas
+        cuotas = obtener_todas_cuotas_con_estado()
+        
+        self.tree.delete(*self.tree.get_children())
+        
+        for cuota in cuotas:
+            self.tree.insert('', tk.END,
+                            values=(
+                                cuota['nombre'],
+                                f"${cuota['monto']:.2f}",
+                                cuota['total_asignados'] or 0,
+                                cuota['total_pagados'] or 0,
+                                cuota['total_pendientes'] or 0,
+                                f"${cuota['monto_recaudado'] or 0:.2f}",
+                                f"${cuota['monto_pendiente'] or 0:.2f}"
+                            ))
+    
+    def exportar_pdf_completo(self):
+        """Exporta PDF con todas las cuotas"""
+        try:
+            from modules.reports import generar_reporte_todas_cuotas_pdf
+            
+            pdf_path = generar_reporte_todas_cuotas_pdf()
+            
+            from modules.reports import abrir_pdf
+            abrir_pdf(pdf_path)
+            
+            messagebox.showinfo("Éxito", 
+                                f"Reporte general generado correctamente\n"
+                                f"Ruta: {pdf_path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al generar reporte:\n{str(e)}")

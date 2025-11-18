@@ -1,20 +1,25 @@
-# main.py - Sistema de Control de Riegos Agrícolas
 import tkinter as tk
 from tkinter import ttk, messagebox
 import sys
 import os
 from datetime import datetime
 from modules.models import init_db, cargar_campesinos_desde_csv
+from modules.cuotas import init_cuotas_db  # ✅ IMPORTAR INICIALIZACIÓN DE CUOTAS
 from modules.ui_components import VentanaPrincipal
 
 def main():
     """Función principal del sistema"""
     try:
-        # Inicializar 
-        print("Inicializando base de datos...")
+        # Inicializar BASE DE DATOS DE RIEGOS
+        print("Inicializando base de datos de RIEGOS...")
         init_db()
-
+        
+        # ✅ INICIALIZAR BASE DE DATOS DE CUOTAS (SEPARADA)
+        print("Inicializando base de datos de CUOTAS...")
+        init_cuotas_db()
+        
         from modules.models import contar_campesinos
+        
         if contar_campesinos() == 0:
             print("Cargando campesinos desde CSV...")
             if os.path.exists('XICUCO.csv'):
@@ -22,18 +27,15 @@ def main():
                 print("Campesinos cargados exitosamente")
             else:
                 print("ADVERTENCIA: No se encontró XICUCO.csv. La BD estará vacía.")
-
+        
         root = tk.Tk()
         
         icon_path = os.path.join('assets', 'zapata.png')
-        
         if os.path.exists(icon_path):
             try:
                 import tempfile
                 from PIL import Image, ImageTk
-                
                 imagen = Image.open(icon_path)
-                
                 imagen.thumbnail((64, 64), Image.Resampling.LANCZOS)
                 
                 if os.name == 'nt':
@@ -41,30 +43,29 @@ def main():
                     imagen.save(temp_gif, 'GIF')
                     root.iconbitmap(default=temp_gif)
                 else:
-                    #  Mac/Linux 
+                    # Mac/Linux
                     foto = ImageTk.PhotoImage(imagen)
                     root.iconphoto(False, foto)
                     root._icon_photo = foto
-                    
-                print(f"Icono cargado exitosamente desde {icon_path}")
                 
+                print(f"Icono cargado exitosamente desde {icon_path}")
             except Exception as e:
                 print(f"Advertencia: No se pudo cargar el icono: {e}")
         else:
             print(f"Advertencia: Archivo de icono no encontrado en {icon_path}")
         
         app = VentanaPrincipal(root)
-
+        
         def on_closing():
             if messagebox.askokcancel("Salir", "¿Desea cerrar el sistema?"):
                 root.destroy()
-
+        
         root.protocol("WM_DELETE_WINDOW", on_closing)
-
         root.mainloop()
-
+    
     except Exception as e:
         messagebox.showerror("Error Fatal", f"Error al iniciar el sistema:\n{str(e)}")
         sys.exit(1)
+
 if __name__ == "__main__":
     main()

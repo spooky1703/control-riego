@@ -5,6 +5,7 @@ from reportlab.lib import colors
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Table, TableStyle
 from datetime import datetime
+from typing import Dict, List, Optional  # ✅ AGREGAR Optional aquí
 import os
 import time
 import sys
@@ -1619,6 +1620,7 @@ def generar_pdf_estadisticas(estadisticas: Dict, estadisticas_cultivo: List[Dict
     print(f"  📊 Gráficos: 3 (Barras, Dona, Comparativo)")
     print(f"  📈 Análisis completo incluido")
     return ruta_pdf
+
 def generar_pdf_auditoria(registros_auditoria: List[Dict], fecha_inicio=None, fecha_fin=None) -> str:
     """
     Genera un PDF profesional con el historial de auditoría.
@@ -1744,4 +1746,545 @@ def generar_pdf_auditoria(registros_auditoria: List[Dict], fecha_inicio=None, fe
     c.save()
     
     print(f"✅ PDF de auditoría generado: {ruta_pdf}")
+    return ruta_pdf
+
+def generar_recibo_cuota_pdf_temporal(recibo_cuota_id: int) -> str:
+    """Genera el PDF temporal de un recibo de cuota de cooperación"""
+    from modules.cuotas import obtener_recibo_cuota
+    
+    recibo = obtener_recibo_cuota(recibo_cuota_id)
+    
+    if not recibo:
+        raise ValueError("Recibo de cuota no encontrado")
+    
+    nombre_oficina = obtener_configuracion('nombre_oficina') or "ASOCIACIÓN DE RIEGO"
+    ubicacion = obtener_configuracion('ubicacion') or "Tezontepec de Aldama, Hgo."
+    
+    # Crear carpeta temporal
+    if platform.system() == 'Windows':
+        tempdir = os.path.join(os.environ.get('TEMP', os.getcwd()), 'recibos_temp')
+    else:
+        tempdir = os.path.join('/tmp', 'recibos_temp')
+    
+    os.makedirs(tempdir, exist_ok=True)
+    
+    filename = f"cuota_{recibo['folio']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
+    filepath = os.path.join(tempdir, filename)
+    
+    c = canvas.Canvas(filepath, pagesize=(RECIBO_ANCHO, RECIBO_ALTO))
+    
+    dibujar_recibo_cuota(c, recibo, nombre_oficina, ubicacion)
+    
+    c.save()
+    
+    return filepath
+
+
+def dibujar_recibo_cuota(c, recibo: Dict, nombre_oficina: str, ubicacion: str):
+    """Dibuja el recibo de cuota de cooperación (similar al diseño de riegos)"""
+    
+    # COLORES
+    COLOR_VERDE = colors.HexColor('#B8D1BF')
+    COLOR_BEIGE = colors.HexColor('#FFFFFF')
+    COLOR_BEIGE_OSCURO = colors.HexColor('#C9B99A')
+    COLOR_TEXTO = colors.HexColor('#2C3E2E')
+    COLOR_TEXTO_GRIS = colors.HexColor('#666666')
+    
+    # FONDO BEIGE
+    c.setFillColor(COLOR_BEIGE)
+    c.roundRect(0.15*cm, 0.15*cm, RECIBO_ANCHO - 0.3*cm, RECIBO_ALTO - 0.3*cm, 0.5*cm, stroke=0, fill=1)
+    
+    # HEADER VERDE
+    c.setFillColor(COLOR_VERDE)
+    c.roundRect(0.4*cm, RECIBO_ALTO - 2.3*cm, RECIBO_ANCHO - 0.8*cm, 1.9*cm, 0.4*cm, stroke=0, fill=1)
+    
+    # LOGO
+    if os.path.exists(LOGO_PATH):
+        try:
+            c.drawImage(LOGO_PATH, 0.7*cm, RECIBO_ALTO - 2.1*cm, width=1.7*cm, height=1.7*cm, mask='auto')
+        except:
+            pass
+    
+    # TÍTULO
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold", 10)
+    c.drawCentredString((RECIBO_ANCHO/2) + 0.5*cm, RECIBO_ALTO - 1*cm, "ASOCIACIÓN DE CAMPESINOS DE BOMBEO Y REBOMBEO")
+    c.setFont("Helvetica-Bold", 9)
+    c.drawCentredString((RECIBO_ANCHO/2) + 0.5*cm, RECIBO_ALTO - 1.35*cm, "DEL CERRO DEL XICUCO A.C. (M7-1)")
+    c.setFont("Helvetica", 8)
+    c.drawCentredString((RECIBO_ANCHO/2) + 0.5*cm, RECIBO_ALTO - 1.75*cm, "RFC: ACB030619G68")
+    
+    # SEPARADOR
+    ypos = RECIBO_ALTO - 2.45*cm
+    c.setStrokeColor(COLOR_BEIGE_OSCURO)
+    c.setLineWidth(0.5)
+    c.line(0.7*cm, ypos, RECIBO_ANCHO - 0.7*cm, ypos)
+    
+    # CAJA DE DATOS
+    ypos -= 0.2*cm
+    c.setFillColor(colors.white)
+    c.roundRect(0.7*cm, ypos - 1.5*cm, RECIBO_ANCHO - 1.4*cm, 1.4*cm, 0.25*cm, stroke=1, fill=1)
+    
+    # DATOS - GRID
+    c.setFillColor(COLOR_TEXTO)
+    c.setFont("Helvetica-Bold", 8.5)
+    
+    col1 = 1*cm
+    col2 = 6.5*cm
+    col3 = 12*cm
+    col4 = 17.5*cm
+    
+    row_y = ypos - 0.45*cm
+    
+    # FILA 1
+    c.drawString(col1, row_y, f"NO. RECIBO: {recibo['folio']}")
+    c.drawString(col2, row_y, f"No. Lote: {recibo['numero_lote']}")
+    c.drawString(col3, row_y, f"Barrio: {recibo['barrio']}")
+    
+    # FILA 2
+    row_y -= 0.45*cm
+    c.drawString(col1, row_y, f"Cuota: {recibo['nombre_cuota']}")
+    
+    # RECIBÍ DE
+    ypos = row_y - 0.95*cm
+    c.setFillColor(COLOR_TEXTO_GRIS)
+    c.setFont("Helvetica", 8.5)
+    c.drawString(0.8*cm, ypos, "Recibí de:")
+    
+    c.setFillColor(COLOR_TEXTO)
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(2.2*cm, ypos, recibo['nombre_campesino'].upper())
+    
+    # CONCEPTO
+    ypos -= 0.5*cm
+    c.setStrokeColor(COLOR_BEIGE_OSCURO)
+    c.line(0.8*cm, ypos, RECIBO_ANCHO - 0.8*cm, ypos)
+    
+    ypos -= 0.3*cm
+    c.setFillColor(COLOR_TEXTO_GRIS)
+    c.setFont("Helvetica", 8)
+    c.drawString(0.8*cm, ypos, f"Concepto: {recibo['nombre_cuota']}")
+    
+    # TOTAL
+    ypos -= 0.5*cm
+    c.setFillColor(COLOR_TEXTO)
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(0.8*cm, ypos, "TOTAL:")
+    
+    # Caja del monto
+    monto_x = RECIBO_ANCHO - 5*cm
+    c.setFillColor(colors.white)
+    c.setStrokeColor(COLOR_VERDE)
+    c.setLineWidth(1.5)
+    c.roundRect(monto_x, ypos - 0.35*cm, 4.2*cm, 0.75*cm, 0.25*cm, stroke=1, fill=1)
+    
+    c.setFillColor(COLOR_TEXTO_GRIS)
+    c.setFont("Helvetica", 6.5)
+    c.drawString(monto_x + 0.2*cm, ypos + 0.15*cm, "pago en efectivo")
+    
+    c.setFillColor(COLOR_TEXTO)
+    c.setFont("Helvetica-Bold", 15)
+    c.drawRightString(monto_x + 4*cm, ypos - 0.15*cm, f"${recibo['monto']:.2f}")
+    
+    # FOOTER
+    ypos -= 0.9*cm
+    c.setStrokeColor(COLOR_BEIGE_OSCURO)
+    c.setLineWidth(0.5)
+    c.line(0.8*cm, ypos, RECIBO_ANCHO - 0.8*cm, ypos)
+    
+    ypos -= 0.3*cm
+    c.setFillColor(COLOR_TEXTO_GRIS)
+    c.setFont("Helvetica", 7.5)
+    
+    fecha_obj = datetime.strptime(recibo['fecha'], '%Y-%m-%d')
+    c.drawString(0.8*cm, ypos, f"C. Juan Aldama #25, Col. Centro, Tezontepec de Aldama. Fecha: {fecha_obj.strftime('%d/%m/%Y')}")
+    
+    ypos -= 0.28*cm
+    hora_obj = datetime.strptime(recibo['hora'], '%H:%M:%S')
+    ampm = "p.m." if hora_obj.hour >= 12 else "a.m."
+    hora_12 = hora_obj.hour if hora_obj.hour <= 12 else hora_obj.hour - 12
+    if hora_12 == 0:
+        hora_12 = 12
+    
+    c.drawString(0.8*cm, ypos, f"Hora: {hora_12:02d}:{hora_obj.minute:02d}:{hora_obj.second:02d} {ampm}")
+    
+    # Firma
+    c.drawRightString(RECIBO_ANCHO - 0.8*cm, ypos + 0.28*cm, "Firma Recaudador")
+    c.line(RECIBO_ANCHO - 4*cm, ypos + 0.18*cm, RECIBO_ANCHO - 0.8*cm, ypos + 0.18*cm)
+    
+    # LEYENDA LEGAL
+    ypos -= 0.45*cm
+    c.setFont("Helvetica", 6)
+    c.drawString(0.7*cm, ypos, "Este recibo ampara el pago de cuota de cooperación destinada exclusivamente al mantenimiento y operación del sistema de riego.")
+    ypos -= 0.22*cm
+    c.drawString(0.7*cm, ypos, "Exento de IVA conforme al régimen de personas morales con fines no lucrativos (Art. 79-80 LISR y Art. 15 fracc. XII LIVA).")
+
+
+def generar_reporte_cuota_pdf(tipo_cuota_id: int) -> str:
+    """Genera un reporte PDF completo de una cuota específica"""
+    from modules.cuotas import get_cuotas_connection, obtener_resumen_cuota
+    
+    conn = get_cuotas_connection()
+    cursor = conn.cursor()
+    
+    # Obtener información de la cuota
+    cursor.execute("SELECT * FROM tipos_cuota WHERE id = ?", (tipo_cuota_id,))
+    cuota = dict(cursor.fetchone())
+    
+    # Obtener todos los campesinos asignados
+    cursor.execute("""
+        SELECT * FROM cuotas_campesinos
+        WHERE tipo_cuota_id = ?
+        ORDER BY pagado ASC, numero_lote ASC
+    """, (tipo_cuota_id,))
+    
+    campesinos = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
+    # Obtener resumen
+    resumen = obtener_resumen_cuota(tipo_cuota_id)
+    
+    # Crear PDF
+    reportes_dir = os.path.join('database', 'reportes')
+    os.makedirs(reportes_dir, exist_ok=True)
+    
+    fecha_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+    nombre_archivo = f"reporte_cuota_{cuota['nombre'].replace(' ', '_')}_{fecha_str}.pdf"
+    ruta_pdf = os.path.join(reportes_dir, nombre_archivo)
+    
+    c = canvas.Canvas(ruta_pdf, pagesize=letter)
+    ancho, alto = letter
+    
+    # LOGO
+    if os.path.exists(LOGO_PATH):
+        try:
+            c.drawImage(LOGO_PATH, 2*cm, alto - 3*cm, width=2*cm, height=2*cm, mask='auto')
+        except:
+            pass
+    
+    # ENCABEZADO
+    c.setFont("Helvetica-Bold", 16)
+    c.drawCentredString(ancho/2, alto - 2*cm, "REPORTE DE CUOTA DE COOPERACIÓN")
+    
+    c.setFont("Helvetica-Bold", 14)
+    c.drawCentredString(ancho/2, alto - 2.8*cm, cuota['nombre'].upper())
+    
+    c.setFont("Helvetica", 10)
+    c.drawCentredString(ancho/2, alto - 3.3*cm, f"Monto: ${cuota['monto']:.2f}")
+    c.drawCentredString(ancho/2, alto - 3.8*cm, f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    
+    # RESUMEN
+    ypos = alto - 5*cm
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2*cm, ypos, "RESUMEN")
+    
+    ypos -= 0.8*cm
+    c.setFont("Helvetica", 10)
+    c.drawString(2*cm, ypos, f"Total Asignados: {resumen['total_asignados']}")
+    ypos -= 0.5*cm
+    c.drawString(2*cm, ypos, f"Total Pagados: {resumen['total_pagados']} - Monto Recaudado: ${resumen['monto_recaudado']:.2f}")
+    ypos -= 0.5*cm
+    c.drawString(2*cm, ypos, f"Total Pendientes: {resumen['total_pendientes']} - Monto Pendiente: ${resumen['monto_pendiente']:.2f}")
+    
+    # TABLA
+    ypos -= 1*cm
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(2*cm, ypos, "DETALLE DE CAMPESINOS")
+    
+    ypos -= 0.6*cm
+    
+    # Encabezados de tabla
+    c.setFont("Helvetica-Bold", 8)
+    c.drawString(2*cm, ypos, "Lote")
+    c.drawString(3.5*cm, ypos, "Nombre")
+    c.drawString(11*cm, ypos, "Barrio")
+    c.drawString(13.5*cm, ypos, "Monto")
+    c.drawString(15.5*cm, ypos, "Estado")
+    c.drawString(17.5*cm, ypos, "Fecha Pago")
+    
+    ypos -= 0.3*cm
+    c.line(2*cm, ypos, ancho - 2*cm, ypos)
+    ypos -= 0.4*cm
+    
+    # Datos
+    c.setFont("Helvetica", 7)
+    
+    for campesino in campesinos:
+        if ypos < 3*cm:  # Nueva página si se acaba el espacio
+            c.showPage()
+            ypos = alto - 2*cm
+            c.setFont("Helvetica-Bold", 8)
+            c.drawString(2*cm, ypos, "Lote")
+            c.drawString(3.5*cm, ypos, "Nombre")
+            c.drawString(11*cm, ypos, "Barrio")
+            c.drawString(13.5*cm, ypos, "Monto")
+            c.drawString(15.5*cm, ypos, "Estado")
+            c.drawString(17.5*cm, ypos, "Fecha Pago")
+            ypos -= 0.3*cm
+            c.line(2*cm, ypos, ancho - 2*cm, ypos)
+            ypos -= 0.4*cm
+            c.setFont("Helvetica", 7)
+        
+        estado = "PAGADO" if campesino['pagado'] else "PENDIENTE"
+        fecha_pago = campesino['fecha_pago'] if campesino['fecha_pago'] else "-"
+        
+        c.drawString(2*cm, ypos, campesino['numero_lote'])
+        nombre = campesino['nombre_campesino'][:30]
+        c.drawString(3.5*cm, ypos, nombre)
+        c.drawString(11*cm, ypos, campesino['barrio'])
+        c.drawRightString(15*cm, ypos, f"${campesino['monto']:.2f}")
+        c.drawString(15.5*cm, ypos, estado)
+        c.drawString(17.5*cm, ypos, fecha_pago[:10] if fecha_pago != "-" else "-")
+        
+        ypos -= 0.35*cm
+    
+    # Línea final y totales
+    ypos -= 0.2*cm
+    c.line(2*cm, ypos, ancho - 2*cm, ypos)
+    
+    ypos -= 0.5*cm
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(11*cm, ypos, "TOTAL RECAUDADO:")
+    c.drawRightString(15*cm, ypos, f"${resumen['monto_recaudado']:.2f}")
+    
+    ypos -= 0.4*cm
+    c.drawString(11*cm, ypos, "TOTAL PENDIENTE:")
+    c.drawRightString(15*cm, ypos, f"${resumen['monto_pendiente']:.2f}")
+    
+    c.save()
+    
+    print(f"✓ Reporte de cuota generado: {ruta_pdf}")
+    
+    return ruta_pdf
+
+
+def generar_reporte_todas_cuotas_pdf() -> str:
+    """Genera un reporte PDF con todas las cuotas del sistema"""
+    from modules.cuotas import obtener_todas_cuotas_con_estado, obtener_estadisticas_generales_cuotas
+    
+    cuotas = obtener_todas_cuotas_con_estado()
+    stats = obtener_estadisticas_generales_cuotas()
+    
+    # Crear PDF
+    reportes_dir = os.path.join('database', 'reportes')
+    os.makedirs(reportes_dir, exist_ok=True)
+    
+    fecha_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+    nombre_archivo = f"reporte_general_cuotas_{fecha_str}.pdf"
+    ruta_pdf = os.path.join(reportes_dir, nombre_archivo)
+    
+    c = canvas.Canvas(ruta_pdf, pagesize=letter)
+    ancho, alto = letter
+    
+    # LOGO
+    if os.path.exists(LOGO_PATH):
+        try:
+            c.drawImage(LOGO_PATH, 2*cm, alto - 3*cm, width=2*cm, height=2*cm, mask='auto')
+        except:
+            pass
+    
+    # ENCABEZADO
+    c.setFont("Helvetica-Bold", 16)
+    c.drawCentredString(ancho/2, alto - 2*cm, "REPORTE GENERAL DE CUOTAS DE COOPERACIÓN")
+    
+    c.setFont("Helvetica", 10)
+    c.drawCentredString(ancho/2, alto - 2.8*cm, f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    
+    # RESUMEN GENERAL
+    ypos = alto - 4*cm
+    c.setFont("Helvetica-Bold", 13)
+    c.drawString(2*cm, ypos, "ESTADÍSTICAS GENERALES")
+    
+    ypos -= 0.8*cm
+    c.setFont("Helvetica", 10)
+    c.drawString(2*cm, ypos, f"Total de Tipos de Cuotas: {stats['total_tipos_cuotas']}")
+    ypos -= 0.5*cm
+    c.drawString(2*cm, ypos, f"Total de Cuotas Asignadas: {stats['total_cuotas_asignadas']}")
+    ypos -= 0.5*cm
+    c.drawString(2*cm, ypos, f"Cuotas Pagadas: {stats['total_pagadas']} - Monto Recaudado: ${stats['monto_recaudado']:.2f}")
+    ypos -= 0.5*cm
+    c.drawString(2*cm, ypos, f"Cuotas Pendientes: {stats['total_pendientes']} - Monto Pendiente: ${stats['monto_pendiente']:.2f}")
+    ypos -= 0.5*cm
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(2*cm, ypos, f"MONTO TOTAL: ${stats['monto_total']:.2f}")
+    
+    # TABLA DE CUOTAS
+    ypos -= 1.2*cm
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2*cm, ypos, "DETALLE POR CUOTA")
+    
+    ypos -= 0.6*cm
+    
+    # Encabezados
+    c.setFont("Helvetica-Bold", 8)
+    c.drawString(2*cm, ypos, "Nombre")
+    c.drawString(8*cm, ypos, "Monto Unit.")
+    c.drawString(11*cm, ypos, "Asignados")
+    c.drawString(13*cm, ypos, "Pagados")
+    c.drawString(15*cm, ypos, "Pendientes")
+    c.drawString(17*cm, ypos, "Recaudado")
+    
+    ypos -= 0.3*cm
+    c.line(2*cm, ypos, ancho - 2*cm, ypos)
+    ypos -= 0.4*cm
+    
+    # Datos
+    c.setFont("Helvetica", 8)
+    
+    for cuota in cuotas:
+        if ypos < 3*cm:
+            c.showPage()
+            ypos = alto - 2*cm
+            c.setFont("Helvetica-Bold", 8)
+            c.drawString(2*cm, ypos, "Nombre")
+            c.drawString(8*cm, ypos, "Monto Unit.")
+            c.drawString(11*cm, ypos, "Asignados")
+            c.drawString(13*cm, ypos, "Pagados")
+            c.drawString(15*cm, ypos, "Pendientes")
+            c.drawString(17*cm, ypos, "Recaudado")
+            ypos -= 0.3*cm
+            c.line(2*cm, ypos, ancho - 2*cm, ypos)
+            ypos -= 0.4*cm
+            c.setFont("Helvetica", 8)
+        
+        c.drawString(2*cm, ypos, cuota['nombre'][:40])
+        c.drawRightString(10*cm, ypos, f"${cuota['monto']:.2f}")
+        c.drawCentredString(11.5*cm, ypos, str(cuota['total_asignados'] or 0))
+        c.drawCentredString(13.5*cm, ypos, str(cuota['total_pagados'] or 0))
+        c.drawCentredString(15.5*cm, ypos, str(cuota['total_pendientes'] or 0))
+        c.drawRightString(19*cm, ypos, f"${cuota['monto_recaudado'] or 0:.2f}")
+        
+        ypos -= 0.4*cm
+    
+    c.save()
+    
+    print(f"✓ Reporte general de cuotas generado: {ruta_pdf}")
+    
+    return ruta_pdf
+
+def generar_reporte_cuotas_dia_pdf(fecha: Optional[str] = None) -> str:
+    """Genera un reporte PDF de las cuotas cobradas en un día específico"""
+    from modules.cuotas import obtener_recibos_cuotas_dia
+    
+    if not fecha:
+        fecha = datetime.now().strftime('%Y-%m-%d')
+    
+    recibos = obtener_recibos_cuotas_dia(fecha)
+    
+    if not recibos:
+        raise ValueError("No hay recibos de cuotas para el día seleccionado")
+    
+    # Crear PDF
+    reportes_dir = os.path.join('database', 'reportes')
+    os.makedirs(reportes_dir, exist_ok=True)
+    
+    fecha_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+    nombre_archivo = f"recaudacion_cuotas_{fecha_str}.pdf"
+    ruta_pdf = os.path.join(reportes_dir, nombre_archivo)
+    
+    c = canvas.Canvas(ruta_pdf, pagesize=letter)
+    ancho, alto = letter
+    
+    # LOGO
+    if os.path.exists(LOGO_PATH):
+        try:
+            c.drawImage(LOGO_PATH, 2*cm, alto - 3*cm, width=2*cm, height=2*cm, mask='auto')
+        except:
+            pass
+    
+    # ENCABEZADO
+    c.setFont("Helvetica-Bold", 16)
+    c.drawCentredString(ancho/2, alto - 2*cm, "RECAUDACIÓN DE CUOTAS DEL DÍA")
+    
+    fecha_obj = datetime.strptime(fecha, '%Y-%m-%d')
+    c.setFont("Helvetica", 12)
+    c.drawCentredString(ancho/2, alto - 2.8*cm, f"Fecha: {fecha_obj.strftime('%d/%m/%Y')}")
+    
+    # RESUMEN
+    ypos = alto - 4*cm
+    total_recaudado = sum(r['monto'] for r in recibos)
+    
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2*cm, ypos, "RESUMEN DEL DÍA")
+    
+    ypos -= 0.8*cm
+    c.setFont("Helvetica", 11)
+    c.drawString(2*cm, ypos, f"Total de Recibos: {len(recibos)}")
+    ypos -= 0.5*cm
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(2*cm, ypos, f"Total Recaudado: ${total_recaudado:.2f}")
+    
+    # TABLA
+    ypos -= 1.2*cm
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(2*cm, ypos, "DETALLE DE RECIBOS")
+    
+    ypos -= 0.6*cm
+    
+    # Encabezados de tabla
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(2*cm, ypos, "Folio")
+    c.drawString(3.5*cm, ypos, "Hora")
+    c.drawString(5.5*cm, ypos, "Lote")
+    c.drawString(7.5*cm, ypos, "Nombre")
+    c.drawString(13*cm, ypos, "Barrio")
+    c.drawString(15.5*cm, ypos, "Cuota")
+    c.drawString(18.5*cm, ypos, "Monto")
+    
+    ypos -= 0.3*cm
+    c.line(2*cm, ypos, ancho - 2*cm, ypos)
+    ypos -= 0.4*cm
+    
+    # Datos
+    c.setFont("Helvetica", 8)
+    
+    for recibo in recibos:
+        if ypos < 3*cm:
+            c.showPage()
+            ypos = alto - 2*cm
+            c.setFont("Helvetica-Bold", 9)
+            c.drawString(2*cm, ypos, "Folio")
+            c.drawString(3.5*cm, ypos, "Hora")
+            c.drawString(5.5*cm, ypos, "Lote")
+            c.drawString(7.5*cm, ypos, "Nombre")
+            c.drawString(13*cm, ypos, "Barrio")
+            c.drawString(15.5*cm, ypos, "Cuota")
+            c.drawString(18.5*cm, ypos, "Monto")
+            ypos -= 0.3*cm
+            c.line(2*cm, ypos, ancho - 2*cm, ypos)
+            ypos -= 0.4*cm
+            c.setFont("Helvetica", 8)
+        
+        c.drawString(2*cm, ypos, str(recibo['folio']))
+        c.drawString(3.5*cm, ypos, recibo['hora'][:5])
+        c.drawString(5.5*cm, ypos, recibo['numero_lote'])
+        nombre = recibo['nombre_campesino'][:25]
+        c.drawString(7.5*cm, ypos, nombre)
+        c.drawString(13*cm, ypos, recibo['barrio'][:15])
+        cuota = recibo['nombre_cuota'][:20]
+        c.drawString(15.5*cm, ypos, cuota)
+        c.drawRightString(20*cm, ypos, f"${recibo['monto']:.2f}")
+        
+        ypos -= 0.35*cm
+    
+        # Línea final y total
+    ypos -= 0.2*cm
+    c.line(2*cm, ypos, ancho - 2*cm, ypos)
+
+    ypos -= 0.6*cm
+    c.setFont("Helvetica-Bold", 12)
+    # ✅ Cambiar posición del texto para que no se encime
+    c.drawString(13*cm, ypos, "TOTAL DEL DÍA:")
+    c.drawRightString(20*cm, ypos, f"${total_recaudado:.2f}")
+
+    # Pie de página
+    ypos -= 1.5*cm
+    c.setFont("Helvetica", 8)
+    c.drawString(2*cm, ypos, f"Reporte generado el {datetime.now().strftime('%d/%m/%Y a las %H:%M')}")
+    c.drawString(2*cm, ypos - 0.3*cm, "Sistema de Control de Riegos - Módulo de Cuotas de Cooperación")
+    
+    c.save()
+    
+    print(f"✓ Reporte de cuotas del día generado: {ruta_pdf}")
+    
     return ruta_pdf
