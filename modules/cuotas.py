@@ -33,6 +33,7 @@ def init_cuotas_db():
             monto REAL NOT NULL CHECK(monto > 0),
             descripcion TEXT,
             activa BOOLEAN DEFAULT 1,
+            folio_actual INTEGER DEFAULT 1,
             fecha_creacion TEXT DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -360,7 +361,7 @@ def pagar_cuota(cuota_campesino_id: int) -> Dict:
     
     # Obtener datos de la cuota
     cursor.execute('''
-        SELECT cc.*, tc.nombre as nombre_cuota
+        SELECT cc.*, tc.nombre as nombre_cuota, tc.folio_actual
         FROM cuotas_campesinos cc
         JOIN tipos_cuota tc ON cc.tipo_cuota_id = tc.id
         WHERE cc.id = ?
@@ -376,9 +377,9 @@ def pagar_cuota(cuota_campesino_id: int) -> Dict:
         conn.close()
         raise ValueError("Esta cuota ya fue pagada")
     
-    # Obtener folio actual
-    cursor.execute("SELECT valor FROM configuracion_cuotas WHERE clave = 'folio_actual_cuotas'")
-    folio = int(cursor.fetchone()['valor'])
+    # ✅ OBTENER FOLIO INDIVIDUAL DEL TIPO DE CUOTA
+    folio = cuota['folio_actual']
+    tipo_cuota_id = cuota['tipo_cuota_id']
     
     # Datos del recibo
     ahora = datetime.now()
@@ -407,13 +408,13 @@ def pagar_cuota(cuota_campesino_id: int) -> Dict:
         WHERE id = ?
     ''', (fecha, folio, cuota_campesino_id))
     
-    # Incrementar folio
+    # ✅ INCREMENTAR EL FOLIO SOLO PARA ESTE TIPO DE CUOTA
     nuevo_folio = folio + 1
     cursor.execute('''
-        UPDATE configuracion_cuotas 
-        SET valor = ? 
-        WHERE clave = 'folio_actual_cuotas'
-    ''', (str(nuevo_folio),))
+        UPDATE tipos_cuota 
+        SET folio_actual = ? 
+        WHERE id = ?
+    ''', (nuevo_folio, tipo_cuota_id))
     
     conn.commit()
     conn.close()
@@ -517,3 +518,48 @@ def obtener_estadisticas_generales_cuotas() -> Dict:
         'monto_pendiente': monto_pendiente,
         'monto_total': monto_recaudado + monto_pendiente
     }
+    
+def migrar_folios_individuales():
+    """Migración: Agrega folio_actual a tipos de cuota existentes"""
+    conn = get_cuotas_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Verificar si la columna ya existe
+        cursor.execute("PRAGMA table_info(tipos_cuota)")
+        columnas = [col[1] for col in cursor.fetchall()]
+        
+        if 'folio_actual' not in columnas:
+            # Agregar la columna
+            cursor.execute('ALTER TABLE tipos_cuota ADD COLUMN folio_actual INTEGER DEFAULT 1')
+            print("✓ Columna folio_actual agregada a tipos_cuota")
+            
+            # Inicializar folios según recibos existentes
+            cursor.execute('SELECT id FROM tipos_cuota')
+            tipos = cursor.fetchall()
+            
+            for tipo in tipos:
+                tipo_id = tipo[0]
+                # Obtener el máximo folio usado para este tipo de cuota
+                cursor.execute('''
+                    SELECT MAX(folio) FROM recibos_cuotas
+                    WHERE nombre_cuota IN (
+                        SELECT nombre FROM tipos_cuota WHERE id = ?
+                    )
+                ''', (tipo_id,))
+                
+                max_folio = cursor.fetchone()[0]
+                nuevo_folio = (max_folio + 1) if max_folio else 1
+                
+                cursor.execute('UPDATE tipos_cuota SET folio_actual = ? WHERE id = ?', 
+                               (nuevo_folio, tipo_id))
+            
+            conn.commit()
+            print("✓ Folios inicializados correctamente")
+        else:
+            print("✓ La columna folio_actual ya existe")
+            
+    except Exception as e:
+        print(f"Error en migración: {e}")
+    finally:
+        conn.close()
