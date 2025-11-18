@@ -700,10 +700,14 @@ def generar_corte_caja_excel(fecha: str, recibos: List[Dict]) -> str:
     """
     Genera un archivo Excel con el corte de caja del día.
     
+    Columnas en orden:
+    FOLIO | NO DE LOTE | CICLO | BARRIO | CULTIVO | SUPERFICIE DE LA MILPA | 
+    RIEGO DE LA MILPA | CAMPESINO | CUANTO SE COBRA | FECHA
+    
     Args:
         fecha: Fecha en formato YYYY-MM-DD
         recibos: Lista de recibos del día
-    
+        
     Returns:
         Ruta del archivo Excel generado
     """
@@ -745,30 +749,31 @@ def generar_corte_caja_excel(fecha: str, recibos: List[Dict]) -> str:
     )
     
     # ===== ENCABEZADO =====
-    ws.merge_cells('A1:H1')
+    ws.merge_cells('A1:J1')
     cell_titulo = ws['A1']
     cell_titulo.value = 'CORTE DE CAJA'
     cell_titulo.font = titulo_font
     cell_titulo.fill = titulo_fill
     cell_titulo.alignment = Alignment(horizontal='center', vertical='center')
     
-    ws.merge_cells('A2:H2')
+    ws.merge_cells('A2:J2')
     cell_fecha = ws['A2']
     cell_fecha.value = f"Fecha: {fecha_obj.strftime('%d/%m/%Y')}"
     cell_fecha.font = Font(name='Calibri', size=12, bold=True)
     cell_fecha.alignment = Alignment(horizontal='center')
     
     nombre_oficina = obtener_configuracion('nombre_oficina') or 'SISTEMA DE RIEGO'
-    ws.merge_cells('A3:H3')
+    ws.merge_cells('A3:J3')
     cell_oficina = ws['A3']
     cell_oficina.value = nombre_oficina
     cell_oficina.font = Font(name='Calibri', size=11, italic=True)
     cell_oficina.alignment = Alignment(horizontal='center')
     
-    # ===== CABECERAS =====
-    headers = ['Folio', 'Lote', 'Nombre', 'Cultivo', 'Superficie', 'Riego', 'Monto', 'Hora']
-    row_num = 5
+    # ===== CABECERAS (10 COLUMNAS) =====
+    headers = ['FOLIO', 'NO. LOTE', 'CICLO', 'BARRIO', 'CULTIVO', 'SUP', 
+               'RIEGO', 'RECIBI DE', 'SERVICIO', 'FECHA']
     
+    row_num = 5
     for col_num, header in enumerate(headers, 1):
         cell = ws.cell(row=row_num, column=col_num)
         cell.value = header
@@ -777,38 +782,55 @@ def generar_corte_caja_excel(fecha: str, recibos: List[Dict]) -> str:
         cell.alignment = header_alignment
         cell.border = border
     
-    # ===== DATOS =====
+    # ===== DATOS (10 COLUMNAS) =====
     row_num = 6
     total_monto = 0
     
     for recibo in recibos:
         if recibo.get('eliminado'):
             continue
-            
-        ws.cell(row=row_num, column=1, value=recibo['folio']).border = border
-        ws.cell(row=row_num, column=2, value=recibo['numero_lote']).border = border
-        ws.cell(row=row_num, column=3, value=recibo['nombre']).border = border
-        ws.cell(row=row_num, column=4, value=recibo['cultivo']).border = border
         
-        sup_cell = ws.cell(row=row_num, column=5, value=recibo['superficie'])
+        # Columna 1: FOLIO
+        ws.cell(row=row_num, column=1, value=recibo['folio']).border = border
+        
+        # Columna 2: NO DE LOTE
+        ws.cell(row=row_num, column=2, value=recibo['numero_lote']).border = border
+        
+        # Columna 3: CICLO
+        ws.cell(row=row_num, column=3, value=recibo['ciclo']).border = border
+        
+        # Columna 4: BARRIO
+        ws.cell(row=row_num, column=4, value=recibo['barrio']).border = border
+        
+        # Columna 5: CULTIVO
+        ws.cell(row=row_num, column=5, value=recibo['cultivo']).border = border
+        
+        # Columna 6: SUPERFICIE DE LA MILPA
+        sup_cell = ws.cell(row=row_num, column=6, value=recibo['superficie'])
         sup_cell.border = border
         sup_cell.alignment = Alignment(horizontal='right')
         
-        ws.cell(row=row_num, column=6, value=recibo['numero_riego']).border = border
+        # Columna 7: RIEGO DE LA MILPA
+        ws.cell(row=row_num, column=7, value=recibo['numero_riego']).border = border
         
-        monto_cell = ws.cell(row=row_num, column=7, value=recibo['costo'])
+        # Columna 8: CAMPESINO
+        ws.cell(row=row_num, column=8, value=recibo['nombre']).border = border
+        
+        # Columna 9: CUANTO SE COBRA
+        monto_cell = ws.cell(row=row_num, column=9, value=recibo['costo'])
         monto_cell.border = border
         monto_cell.number_format = '$#,##0.00'
         monto_cell.alignment = Alignment(horizontal='right')
         
-        ws.cell(row=row_num, column=8, value=recibo['hora']).border = border
+        # Columna 10: FECHA
+        ws.cell(row=row_num, column=10, value=recibo['fecha']).border = border
         
         total_monto += recibo['costo']
         row_num += 1
     
     # ===== TOTALES =====
     row_num += 1
-    ws.merge_cells(f'A{row_num}:F{row_num}')
+    ws.merge_cells(f'A{row_num}:H{row_num}')
     cell_total_label = ws.cell(row=row_num, column=1)
     cell_total_label.value = 'TOTAL DEL DÍA:'
     cell_total_label.font = total_font
@@ -816,7 +838,7 @@ def generar_corte_caja_excel(fecha: str, recibos: List[Dict]) -> str:
     cell_total_label.alignment = Alignment(horizontal='right')
     cell_total_label.border = border
     
-    cell_total_monto = ws.cell(row=row_num, column=7)
+    cell_total_monto = ws.cell(row=row_num, column=9)
     cell_total_monto.value = total_monto
     cell_total_monto.font = total_font
     cell_total_monto.fill = total_fill
@@ -824,7 +846,7 @@ def generar_corte_caja_excel(fecha: str, recibos: List[Dict]) -> str:
     cell_total_monto.alignment = Alignment(horizontal='right')
     cell_total_monto.border = border
     
-    ws.cell(row=row_num, column=8).border = border
+    ws.cell(row=row_num, column=10).border = border
     
     # ===== ESTADÍSTICAS =====
     row_num += 2
@@ -849,27 +871,29 @@ def generar_corte_caja_excel(fecha: str, recibos: List[Dict]) -> str:
     
     # ===== PIE DE PÁGINA =====
     row_num += 2
-    ws.merge_cells(f'A{row_num}:H{row_num}')
+    ws.merge_cells(f'A{row_num}:J{row_num}')
     cell_generado = ws.cell(row=row_num, column=1)
     cell_generado.value = f"Generado el {datetime.now().strftime('%d/%m/%Y a las %H:%M:%S')}"
     cell_generado.font = Font(name='Calibri', size=9, italic=True, color='808080')
     cell_generado.alignment = Alignment(horizontal='center')
     
     # ===== AJUSTAR ANCHOS DE COLUMNA =====
-    ws.column_dimensions['A'].width = 8
-    ws.column_dimensions['B'].width = 10
-    ws.column_dimensions['C'].width = 30
-    ws.column_dimensions['D'].width = 12
-    ws.column_dimensions['E'].width = 12
-    ws.column_dimensions['F'].width = 8
-    ws.column_dimensions['G'].width = 15
-    ws.column_dimensions['H'].width = 12
+    ws.column_dimensions['A'].width = 8      # FOLIO
+    ws.column_dimensions['B'].width = 10     # NO DE LOTE
+    ws.column_dimensions['C'].width = 10     # CICLO
+    ws.column_dimensions['D'].width = 12     # BARRIO
+    ws.column_dimensions['E'].width = 12     # CULTIVO
+    ws.column_dimensions['F'].width = 14     # SUPERFICIE DE LA MILPA
+    ws.column_dimensions['G'].width = 13     # RIEGO DE LA MILPA
+    ws.column_dimensions['H'].width = 18     # CAMPESINO
+    ws.column_dimensions['I'].width = 15     # CUANTO SE COBRA
+    ws.column_dimensions['J'].width = 12     # FECHA
     
     # Guardar archivo
     wb.save(ruta_excel)
-    
     print(f"✅ Corte de caja Excel generado: {ruta_excel}")
     return ruta_excel
+
 
 def generar_pdf_estadisticas(estadisticas: Dict, estadisticas_cultivo: List[Dict]) -> str:
     """
@@ -939,7 +963,7 @@ def generar_pdf_estadisticas(estadisticas: Dict, estadisticas_cultivo: List[Dict
                     f'{valor:.2f} ha',
                     ha='center', va='bottom', fontsize=11, fontweight='bold',
                     bbox=dict(boxstyle='round,pad=0.4', facecolor='white', 
-                             edgecolor=colores[i], linewidth=2, alpha=0.95))
+                            edgecolor=colores[i % len(colores)], linewidth=2, alpha=0.95))
         
         ax.set_xticks(range(len(cultivos)))
         ax.set_xticklabels(cultivos, rotation=35, ha='right', fontsize=11, fontweight='600')
@@ -1576,10 +1600,10 @@ def generar_pdf_estadisticas(estadisticas: Dict, estadisticas_cultivo: List[Dict
         c.setFont("Helvetica", 10)
         
         conclusion_texto = f"""El sistema presenta un nivel de operación {'excelente' if porcentaje_sembrado >= 85 else 'satisfactorio' if porcentaje_sembrado >= 70 else 'con potencial'} 
-con {estadisticas.get('total_campesinos', 0)} campesinos registrados y {estadisticas.get('hectareas_sembradas', 0):.2f} hectáreas
-en producción. La diversificación de {len(estadisticas_cultivo) if estadisticas_cultivo else 0} tipos de cultivos indica una estrategia
-agrícola balanceada. Se recomienda mantener el monitoreo continuo y aplicar las
-recomendaciones estratégicas propuestas para optimizar los resultados."""
+        con {estadisticas.get('total_campesinos', 0)} campesinos registrados y {estadisticas.get('hectareas_sembradas', 0):.2f} hectáreas
+        en producción. La diversificación de {len(estadisticas_cultivo) if estadisticas_cultivo else 0} tipos de cultivos indica una estrategia
+        agrícola balanceada. Se recomienda mantener el monitoreo continuo y aplicar las
+        recomendaciones estratégicas propuestas para optimizar los resultados."""
         
         y_texto = ypos - 1.3*cm
         for linea in conclusion_texto.split('\n'):
@@ -1595,8 +1619,6 @@ recomendaciones estratégicas propuestas para optimizar los resultados."""
     print(f"  📊 Gráficos: 3 (Barras, Dona, Comparativo)")
     print(f"  📈 Análisis completo incluido")
     return ruta_pdf
-
-
 def generar_pdf_auditoria(registros_auditoria: List[Dict], fecha_inicio=None, fecha_fin=None) -> str:
     """
     Genera un PDF profesional con el historial de auditoría.
