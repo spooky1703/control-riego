@@ -2288,3 +2288,118 @@ def generar_reporte_cuotas_dia_pdf(fecha: Optional[str] = None) -> str:
     print(f"✓ Reporte de cuotas del día generado: {ruta_pdf}")
     
     return ruta_pdf
+
+def generar_excel_cuotas_dia(fecha: Optional[str] = None) -> str:
+    """Genera un Excel con las cuotas cobradas en un día específico"""
+    from modules.cuotas import obtener_recibos_cuotas_dia
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    
+    if not fecha:
+        fecha = datetime.now().strftime('%Y-%m-%d')
+    
+    recibos = obtener_recibos_cuotas_dia(fecha)
+    
+    if not recibos:
+        raise ValueError("No hay recibos de cuotas para el día seleccionado")
+    
+    # Crear Excel
+    reportes_dir = os.path.join('database', 'reportes')
+    os.makedirs(reportes_dir, exist_ok=True)
+    
+    fecha_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+    nombre_archivo = f"cuotas_dia_{fecha_str}.xlsx"
+    ruta_excel = os.path.join(reportes_dir, nombre_archivo)
+    
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Cuotas del Día"
+    
+    # ESTILOS
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=12)
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    # TÍTULO
+    ws.merge_cells('A1:H1')
+    ws['A1'] = "RECAUDACIÓN DE CUOTAS DEL DÍA"
+    ws['A1'].font = Font(bold=True, size=16)
+    ws['A1'].alignment = Alignment(horizontal='center')
+    
+    fecha_obj = datetime.strptime(fecha, '%Y-%m-%d')
+    ws.merge_cells('A2:H2')
+    ws['A2'] = f"Fecha: {fecha_obj.strftime('%d/%m/%Y')}"
+    ws['A2'].font = Font(size=12)
+    ws['A2'].alignment = Alignment(horizontal='center')
+    
+    # RESUMEN
+    total_recaudado = sum(r['monto'] for r in recibos)
+    ws['A4'] = "Total de Recibos:"
+    ws['B4'] = len(recibos)
+    ws['B4'].font = Font(bold=True)
+    
+    ws['A5'] = "Total Recaudado:"
+    ws['B5'] = total_recaudado
+    ws['B5'].font = Font(bold=True)
+    ws['B5'].number_format = '"$"#,##0.00'
+    
+    # ENCABEZADOS
+    headers = ['Folio', 'Hora', 'Lote', 'Nombre', 'Barrio', 'Cuota', 'Monto', 'Fecha']
+    for col, header in enumerate(headers, start=1):
+        cell = ws.cell(row=7, column=col)
+        cell.value = header
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center')
+        cell.border = border
+    
+    # DATOS
+    for idx, recibo in enumerate(recibos, start=8):
+        ws.cell(row=idx, column=1, value=recibo['folio'])
+        ws.cell(row=idx, column=2, value=recibo['hora'][:5])  # HH:MM
+        ws.cell(row=idx, column=3, value=recibo['numero_lote'])
+        ws.cell(row=idx, column=4, value=recibo['nombre_campesino'])
+        ws.cell(row=idx, column=5, value=recibo['barrio'])
+        ws.cell(row=idx, column=6, value=recibo['nombre_cuota'])
+        ws.cell(row=idx, column=7, value=recibo['monto'])
+        ws.cell(row=idx, column=8, value=recibo['fecha'])
+        
+        # Formato moneda
+        ws.cell(row=idx, column=7).number_format = '"$"#,##0.00'
+        
+        # Bordes
+        for col in range(1, 9):
+            ws.cell(row=idx, column=col).border = border
+    
+    # TOTAL AL FINAL
+    ultima_fila = len(recibos) + 8
+    ws.merge_cells(f'A{ultima_fila}:F{ultima_fila}')
+    ws[f'A{ultima_fila}'] = "TOTAL DEL DÍA:"
+    ws[f'A{ultima_fila}'].font = Font(bold=True, size=12)
+    ws[f'A{ultima_fila}'].alignment = Alignment(horizontal='right')
+    
+    ws[f'G{ultima_fila}'] = total_recaudado
+    ws[f'G{ultima_fila}'].font = Font(bold=True, size=12)
+    ws[f'G{ultima_fila}'].number_format = '"$"#,##0.00'
+    ws[f'G{ultima_fila}'].fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+    
+    # AJUSTAR ANCHOS
+    ws.column_dimensions['A'].width = 10
+    ws.column_dimensions['B'].width = 10
+    ws.column_dimensions['C'].width = 10
+    ws.column_dimensions['D'].width = 30
+    ws.column_dimensions['E'].width = 15
+    ws.column_dimensions['F'].width = 25
+    ws.column_dimensions['G'].width = 12
+    ws.column_dimensions['H'].width = 12
+    
+    wb.save(ruta_excel)
+    
+    print(f"✓ Excel de cuotas del día generado: {ruta_excel}")
+    
+    return ruta_excel

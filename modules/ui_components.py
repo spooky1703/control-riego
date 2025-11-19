@@ -6,6 +6,8 @@ from typing import Optional, Dict, List
 import os
 import time
 import platform
+import sys           # ✅ AGREGAR ESTA LÍNEA
+import subprocess
 # Importaciones de módulos propios
 from modules.models import (
     buscar_campesino, obtener_campesino_por_id, crear_campesino,
@@ -2746,23 +2748,43 @@ class VentanaGestorReportes:
         
         ttk.Label(frame, text="GESTOR DE REPORTES", font=("Helvetica", 14, "bold")).pack(pady=10)
         
-        # Frame de botones superiores
+        # ✅ FRAME DE BOTONES EN CUADRÍCULA
         frame_btnssup = ttk.Frame(frame)
         frame_btnssup.pack(fill=tk.X, pady=10)
         
-        ttk.Button(frame_btnssup, text="📊 Generar Corte de Caja Excel", 
-                command=self.generar_corte_caja, width=30).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame_btnssup, text="📄 Generar Reporte de Hoy", 
-                command=self.generar_nuevo_reporte, width=25).pack(side=tk.LEFT, padx=5)
+        # FILA 1: VENTA DÍA
+        ttk.Label(frame_btnssup, text="VENTA DEL DÍA:", font=("Helvetica", 10, "bold")).grid(
+            row=0, column=0, sticky=tk.W, padx=5, pady=5)
         
-        # ✅ AGREGAR ESTE BOTÓN AQUÍ
-        ttk.Button(frame_btnssup, text="💰 Recaudación Cuotas Hoy", 
-                command=self.generar_reporte_cuotas_dia, width=25).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_btnssup, text="📄 PDF", 
+                command=self.generar_nuevo_reporte, width=15).grid(
+            row=0, column=1, padx=5, pady=5)
         
+        ttk.Button(frame_btnssup, text="📊 Excel", 
+                command=self.generar_corte_caja, width=15).grid(
+            row=0, column=2, padx=5, pady=5)
+        
+        # FILA 2: CUOTAS DÍA
+        ttk.Label(frame_btnssup, text="CUOTAS DEL DÍA:", font=("Helvetica", 10, "bold")).grid(
+            row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        
+        ttk.Button(frame_btnssup, text="💰 PDF", 
+                command=self.generar_reporte_cuotas_dia, width=15).grid(
+            row=1, column=1, padx=5, pady=5)
+        
+        ttk.Button(frame_btnssup, text="💰 Excel", 
+                command=self.exportar_cuotas_excel, width=15).grid(
+            row=1, column=2, padx=5, pady=5)
+        
+        # FILA 3: OTROS BOTONES
         ttk.Button(frame_btnssup, text="🔄 Actualizar Lista", 
-                command=self.cargar_reportes, width=20).pack(side=tk.LEFT, padx=5)
+                command=self.cargar_reportes, width=15).grid(
+            row=0, column=3, padx=5, pady=5)
+        
         ttk.Button(frame_btnssup, text="📁 Abrir Carpeta", 
-                command=self.abrir_carpeta_reportes, width=20).pack(side=tk.LEFT, padx=5)
+                command=self.abrir_carpeta_reportes, width=15).grid(
+            row=1, column=3, padx=5, pady=5)
+        
         
         # Frame de lista de reportes
         frame_lista = ttk.LabelFrame(frame, text="Reportes Disponibles", padding="10")
@@ -2830,6 +2852,7 @@ class VentanaGestorReportes:
         pdf_ventas = []
         pdf_estadisticas = []
         pdf_cuotas = []
+        excel_cuotas = []
         
         for archivo in archivos:
             ruta = os.path.join(reportes_dir, archivo)
@@ -2838,34 +2861,36 @@ class VentanaGestorReportes:
             tamano = os.path.getsize(ruta) / 1024  # KB
             
             # Clasificar por tipo
-            if archivo.endswith('.xlsx'):
-                excel_ventas.append((archivo, fecha_str, tamano, ruta))
+            if 'cuota' in archivo.lower() and archivo.endswith('.xlsx'):
+                excel_cuotas.append((archivo, fecha_str, tamano, ruta))
+            elif 'cuota' in archivo.lower() and archivo.endswith('.pdf'):
+                pdf_cuotas.append((archivo, fecha_str, tamano, ruta))
             elif 'estadisticas' in archivo.lower():
                 pdf_estadisticas.append((archivo, fecha_str, tamano, ruta))
-            elif 'cuota' in archivo.lower():
-                pdf_cuotas.append((archivo, fecha_str, tamano, ruta))
+            elif archivo.endswith('.xlsx'):
+                excel_ventas.append((archivo, fecha_str, tamano, ruta))
             elif archivo.endswith('.pdf'):
                 pdf_ventas.append((archivo, fecha_str, tamano, ruta))
         
         # ✅ INSERTAR CON ENCABEZADOS DE CATEGORÍA
         
-        # EXCEL VENTA DEL DÍA
+        # 1. EXCEL VENTA DEL DÍA
         if excel_ventas:
-            self.tree.insert('', tk.END, values=('📊 EXCEL-VENTA DÍA', '', '', ''), tags=('header',))
+            self.tree.insert('', tk.END, values=('📊 EXCEL VENTA DEL DÍA', '', '', ''), tags=('header',))
             for archivo, fecha, tamano, ruta in sorted(excel_ventas, key=lambda x: x[1], reverse=True):
                 self.tree.insert('', tk.END, 
                                 values=(archivo, fecha, f"{tamano:.1f} KB", '📄'),
                                 tags=(ruta,))
         
-        # PDF VENTA DEL DÍA
+        # 2. PDF VENTA DEL DÍA
         if pdf_ventas:
-            self.tree.insert('', tk.END, values=('📄 PDF-VENTA DÍA', '', '', ''), tags=('header',))
+            self.tree.insert('', tk.END, values=('📄 PDF VENTA DEL DÍA', '', '', ''), tags=('header',))
             for archivo, fecha, tamano, ruta in sorted(pdf_ventas, key=lambda x: x[1], reverse=True):
                 self.tree.insert('', tk.END, 
                                 values=(archivo, fecha, f"{tamano:.1f} KB", '📄'),
                                 tags=(ruta,))
         
-        # ESTADÍSTICAS PDF
+        # 3. ESTADÍSTICAS PDF
         if pdf_estadisticas:
             self.tree.insert('', tk.END, values=('📊 ESTADÍSTICAS PDF', '', '', ''), tags=('header',))
             for archivo, fecha, tamano, ruta in sorted(pdf_estadisticas, key=lambda x: x[1], reverse=True):
@@ -2873,10 +2898,18 @@ class VentanaGestorReportes:
                                 values=(archivo, fecha, f"{tamano:.1f} KB", '📄'),
                                 tags=(ruta,))
         
-        # CUOTAS PDF
+        # 4. CUOTAS PDF
         if pdf_cuotas:
             self.tree.insert('', tk.END, values=('💰 CUOTAS PDF', '', '', ''), tags=('header',))
             for archivo, fecha, tamano, ruta in sorted(pdf_cuotas, key=lambda x: x[1], reverse=True):
+                self.tree.insert('', tk.END, 
+                                values=(archivo, fecha, f"{tamano:.1f} KB", '📄'),
+                                tags=(ruta,))
+        
+        # 5. CUOTAS EXCEL
+        if excel_cuotas:
+            self.tree.insert('', tk.END, values=('💰 CUOTAS EXCEL', '', '', ''), tags=('header',))
+            for archivo, fecha, tamano, ruta in sorted(excel_cuotas, key=lambda x: x[1], reverse=True):
                 self.tree.insert('', tk.END, 
                                 values=(archivo, fecha, f"{tamano:.1f} KB", '📄'),
                                 tags=(ruta,))
@@ -3047,6 +3080,33 @@ class VentanaGestorReportes:
             messagebox.showwarning("Sin Datos", str(e))
         except Exception as e:
             messagebox.showerror("Error", f"Error al generar reporte de cuotas:\n{str(e)}")
+
+    def exportar_cuotas_excel(self):
+        """Exporta cuotas del día a Excel"""
+        try:
+            from modules.reports import generar_excel_cuotas_dia
+            
+            excel_path = generar_excel_cuotas_dia()
+            
+            # Abrir automáticamente
+            if os.name == 'nt':  # Windows
+                os.startfile(excel_path)
+            elif sys.platform == 'darwin':  # macOS
+                subprocess.call(['open', excel_path])
+            else:  # Linux
+                subprocess.call(['xdg-open', excel_path])
+            
+            messagebox.showinfo("Éxito", 
+                                f"Excel de cuotas generado correctamente\n"
+                                f"Ruta: {excel_path}")
+            
+            # Recargar lista de reportes
+            self.cargar_reportes()
+            
+        except ValueError as e:
+            messagebox.showwarning("Sin Datos", str(e))
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al generar Excel de cuotas:\n{str(e)}")
 
 
 # ==================== CLASE NUEVA: FORMULARIO NUEVO CAMPESINO ====================
