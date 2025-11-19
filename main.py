@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 from modules.models import init_db, cargar_campesinos_desde_csv
 from modules.ui_components import VentanaPrincipal
-from modules.cuotas import init_cuotas_db, migrar_folios_individuales
+from modules.cuotas import init_cuotas_db, migrar_folios_individuales, recrear_tabla_recibos_cuotas
 
 def main():
     """Función principal del sistema"""
@@ -18,6 +18,7 @@ def main():
         print("Inicializando base de datos de CUOTAS...")
         init_cuotas_db()
         migrar_folios_individuales()
+        recrear_tabla_recibos_cuotas()  # ✅ AGREGAR ESTO
 
         from modules.models import contar_campesinos
         

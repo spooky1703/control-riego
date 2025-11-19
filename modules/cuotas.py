@@ -55,12 +55,12 @@ def init_cuotas_db():
             FOREIGN KEY (tipo_cuota_id) REFERENCES tipos_cuota(id)
         )
     ''')
-    
-    # Tabla de recibos de cuotas
+        # Tabla de recibos de cuotas
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS recibos_cuotas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            folio INTEGER NOT NULL UNIQUE,
+            folio INTEGER NOT NULL,
+            tipo_cuota_id INTEGER NOT NULL,
             fecha TEXT NOT NULL,
             hora TEXT NOT NULL,
             cuota_campesino_id INTEGER NOT NULL,
@@ -73,9 +73,11 @@ def init_cuotas_db():
             eliminado BOOLEAN DEFAULT 0,
             fecha_eliminacion TEXT,
             motivo_eliminacion TEXT,
-            FOREIGN KEY (cuota_campesino_id) REFERENCES cuotas_campesinos(id)
+            FOREIGN KEY (cuota_campesino_id) REFERENCES cuotas_campesinos(id),
+            UNIQUE(tipo_cuota_id, folio)
         )
     ''')
+
     
     # Tabla de configuración de cuotas
     cursor.execute('''
@@ -377,7 +379,7 @@ def pagar_cuota(cuota_campesino_id: int) -> Dict:
         conn.close()
         raise ValueError("Esta cuota ya fue pagada")
     
-    # ✅ OBTENER FOLIO INDIVIDUAL DEL TIPO DE CUOTA
+    # Obtener folio individual del tipo de cuota
     folio = cuota['folio_actual']
     tipo_cuota_id = cuota['tipo_cuota_id']
     
@@ -386,14 +388,14 @@ def pagar_cuota(cuota_campesino_id: int) -> Dict:
     fecha = ahora.strftime('%Y-%m-%d')
     hora = ahora.strftime('%H:%M:%S')
     
-    # Crear recibo
+    # Crear recibo (✅ AHORA INCLUYE tipo_cuota_id)
     cursor.execute('''
         INSERT INTO recibos_cuotas 
-        (folio, fecha, hora, cuota_campesino_id, campesino_id, numero_lote, 
+        (folio, tipo_cuota_id, fecha, hora, cuota_campesino_id, campesino_id, numero_lote, 
          nombre_campesino, barrio, nombre_cuota, monto)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
-        folio, fecha, hora, cuota_campesino_id,
+        folio, tipo_cuota_id, fecha, hora, cuota_campesino_id,
         cuota['campesino_id'], cuota['numero_lote'],
         cuota['nombre_campesino'], cuota['barrio'],
         cuota['nombre_cuota'], cuota['monto']
@@ -408,7 +410,7 @@ def pagar_cuota(cuota_campesino_id: int) -> Dict:
         WHERE id = ?
     ''', (fecha, folio, cuota_campesino_id))
     
-    # ✅ INCREMENTAR EL FOLIO SOLO PARA ESTE TIPO DE CUOTA
+    # Incrementar el folio solo para este tipo de cuota
     nuevo_folio = folio + 1
     cursor.execute('''
         UPDATE tipos_cuota 
@@ -430,6 +432,7 @@ def pagar_cuota(cuota_campesino_id: int) -> Dict:
         'nombre_campesino': cuota['nombre_campesino'],
         'barrio': cuota['barrio']
     }
+
 
 def obtener_recibo_cuota(recibo_id: int) -> Optional[Dict]:
     """Obtiene un recibo de cuota por su ID"""
@@ -561,5 +564,69 @@ def migrar_folios_individuales():
             
     except Exception as e:
         print(f"Error en migración: {e}")
+    finally:
+        conn.close()
+
+def recrear_tabla_recibos_cuotas():
+    """Recrea la tabla recibos_cuotas con la nueva estructura"""
+    conn = get_cuotas_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Respaldar datos existentes
+        cursor.execute("SELECT * FROM recibos_cuotas")
+        recibos_viejos = cursor.fetchall()
+        
+        # Eliminar tabla vieja
+        cursor.execute("DROP TABLE IF EXISTS recibos_cuotas")
+        
+        # Crear tabla nueva
+        cursor.execute('''
+            CREATE TABLE recibos_cuotas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                folio INTEGER NOT NULL,
+                tipo_cuota_id INTEGER NOT NULL,
+                fecha TEXT NOT NULL,
+                hora TEXT NOT NULL,
+                cuota_campesino_id INTEGER NOT NULL,
+                campesino_id INTEGER NOT NULL,
+                numero_lote TEXT NOT NULL,
+                nombre_campesino TEXT NOT NULL,
+                barrio TEXT NOT NULL,
+                nombre_cuota TEXT NOT NULL,
+                monto REAL NOT NULL,
+                eliminado BOOLEAN DEFAULT 0,
+                fecha_eliminacion TEXT,
+                motivo_eliminacion TEXT,
+                FOREIGN KEY (cuota_campesino_id) REFERENCES cuotas_campesinos(id),
+                UNIQUE(tipo_cuota_id, folio)
+            )
+        ''')
+        
+        # Restaurar datos con tipo_cuota_id
+        for recibo in recibos_viejos:
+            # Obtener tipo_cuota_id del nombre
+            cursor.execute('SELECT id FROM tipos_cuota WHERE nombre = ?', (recibo['nombre_cuota'],))
+            tipo = cursor.fetchone()
+            tipo_cuota_id = tipo[0] if tipo else 1
+            
+            cursor.execute('''
+                INSERT INTO recibos_cuotas 
+                (id, folio, tipo_cuota_id, fecha, hora, cuota_campesino_id, campesino_id, 
+                 numero_lote, nombre_campesino, barrio, nombre_cuota, monto, eliminado)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                recibo['id'], recibo['folio'], tipo_cuota_id, recibo['fecha'], 
+                recibo['hora'], recibo['cuota_campesino_id'], recibo['campesino_id'],
+                recibo['numero_lote'], recibo['nombre_campesino'], recibo['barrio'],
+                recibo['nombre_cuota'], recibo['monto'], recibo['eliminado']
+            ))
+        
+        conn.commit()
+        print("✓ Tabla recibos_cuotas migrada correctamente")
+        
+    except Exception as e:
+        print(f"Error en migración: {e}")
+        conn.rollback()
     finally:
         conn.close()
