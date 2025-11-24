@@ -683,3 +683,105 @@ def migrar_sobrecargo_por_tipo():
         conn.rollback()
     finally:
         conn.close()
+
+def calcular_sobrecargo_acumulado(fecha_asignacion_str: str) -> float:
+    """
+    Calcula el sobrecargo acumulado: $50 por cada mes transcurrido desde la asignación.
+    Mes 1 (mismo mes): $50
+    Mes 2: $100
+    etc.
+    """
+    if not fecha_asignacion_str:
+        return 0.0
+        
+    try:
+        # Parsear fecha (puede venir con o sin hora)
+        if ' ' in fecha_asignacion_str:
+            fecha_asignacion = datetime.strptime(fecha_asignacion_str, '%Y-%m-%d %H:%M:%S')
+        else:
+            fecha_asignacion = datetime.strptime(fecha_asignacion_str, '%Y-%m-%d')
+            
+        ahora = datetime.now()
+        
+        # Calcular diferencia de meses
+        meses = (ahora.year - fecha_asignacion.year) * 12 + (ahora.month - fecha_asignacion.month)
+        
+        # Asegurar que al menos sea 0 (si es el mismo mes)
+        if meses < 0:
+            meses = 0
+            
+        # La regla es: $50 iniciales + $50 por cada mes extra
+        # Mes 0 (mismo mes): 1 * 50 = 50
+        # Mes 1 (siguiente mes): 2 * 50 = 100
+        factor = meses + 1
+        
+        return factor * 50.0
+        
+    except Exception as e:
+        print(f"Error calculando sobrecargo: {e}")
+        return 0.0
+
+def actualizar_datos_campesino_en_cuotas(campesino_id: int, nuevos_datos: Dict):
+    """
+    Sincroniza los cambios de datos del campesino en la base de datos de cuotas.
+    Si cambia la superficie, recalcula los montos de las cuotas PENDIENTES.
+    """
+    conn = get_cuotas_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # 1. Actualizar datos básicos (nombre, lote, barrio)
+        campos_basicos = []
+        valores_basicos = []
+        
+        if 'nombre' in nuevos_datos:
+            campos_basicos.append("nombre_campesino = ?")
+            valores_basicos.append(nuevos_datos['nombre'])
+            
+        if 'numero_lote' in nuevos_datos:
+            campos_basicos.append("numero_lote = ?")
+            valores_basicos.append(nuevos_datos['numero_lote'])
+            
+        if 'barrio' in nuevos_datos:
+            campos_basicos.append("barrio = ?")
+            valores_basicos.append(nuevos_datos['barrio'])
+            
+        if campos_basicos:
+            valores_basicos.append(campesino_id)
+            sql = f"UPDATE cuotas_campesinos SET {', '.join(campos_basicos)} WHERE campesino_id = ?"
+            cursor.execute(sql, valores_basicos)
+            
+        # 2. Si cambia la superficie, recalcular montos de cuotas PENDIENTES
+        if 'superficie' in nuevos_datos:
+            try:
+                nueva_superficie = float(nuevos_datos['superficie'])
+                
+                # Obtener cuotas pendientes del campesino
+                cursor.execute('''
+                    SELECT cc.id, tc.monto as tarifa_base
+                    FROM cuotas_campesinos cc
+                    JOIN tipos_cuota tc ON cc.tipo_cuota_id = tc.id
+                    WHERE cc.campesino_id = ? AND cc.pagado = 0
+                ''', (campesino_id,))
+                
+                pendientes = cursor.fetchall()
+                
+                for cuota in pendientes:
+                    nuevo_monto = nueva_superficie * cuota['tarifa_base']
+                    cursor.execute('''
+                        UPDATE cuotas_campesinos 
+                        SET monto = ?
+                        WHERE id = ?
+                    ''', (nuevo_monto, cuota['id']))
+                    
+            except ValueError:
+                pass # Si la superficie no es válida, ignorar
+                
+        conn.commit()
+        print(f"✓ Datos sincronizados en cuotas.db para campesino ID {campesino_id}")
+        
+    except Exception as e:
+        print(f"Error al sincronizar cuotas: {e}")
+        # No lanzamos error para no romper el flujo principal
+    finally:
+        conn.close()

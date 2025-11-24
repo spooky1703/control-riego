@@ -7,6 +7,7 @@ import pandas as pd
 import chardet
 from datetime import datetime
 from typing import Optional, List, Dict, Tuple
+from modules.cuotas import actualizar_datos_campesino_en_cuotas
 # Ruta de la base de datos
 DB_PATH = os.path.join('database', 'riego.db')
 def get_connection():
@@ -251,6 +252,13 @@ def actualizar_campesino(campesino_id: int, datos: Dict) -> bool:
             f"Campesino actualizado: {datos_previos['nombre']} (ID: {campesino_id})",
             json.dumps(datos_previos)
         )
+        
+        # ✅ SINCRONIZAR CON CUOTAS.DB
+        try:
+            actualizar_datos_campesino_en_cuotas(campesino_id, datos)
+        except Exception as e:
+            print(f"Advertencia: No se pudo sincronizar con cuotas.db: {e}")
+            
         conn.commit()
         return True
     finally:
@@ -994,6 +1002,12 @@ def partir_lote(campesino_id: int, num_divisiones: int, superficies: List[float]
             campesino_id
         )
         
+        # ✅ SINCRONIZAR CON CUOTAS.DB (Actualizar superficie del original)
+        try:
+            actualizar_datos_campesino_en_cuotas(campesino_id, {'superficie': superficies[0]})
+        except Exception as e:
+            print(f"Advertencia: No se pudo sincronizar con cuotas.db: {e}")
+            
         return nuevos_ids
         
     except Exception as e:
@@ -1043,6 +1057,12 @@ def renombrar_campesino(campesino_id: int, nuevo_nombre: str) -> bool:
             campesino_id
         )
         
+        # ✅ SINCRONIZAR CON CUOTAS.DB
+        try:
+            actualizar_datos_campesino_en_cuotas(campesino_id, {'nombre': nuevo_nombre})
+        except Exception as e:
+            print(f"Advertencia: No se pudo sincronizar con cuotas.db: {e}")
+            
         return True
         
     except Exception as e:
@@ -1093,6 +1113,12 @@ def actualizar_superficie_campesino(campesino_id: int, nueva_superficie: float) 
             campesino_id
         )
         
+        # ✅ SINCRONIZAR CON CUOTAS.DB
+        try:
+            actualizar_datos_campesino_en_cuotas(campesino_id, {'superficie': nueva_superficie})
+        except Exception as e:
+            print(f"Advertencia: No se pudo sincronizar con cuotas.db: {e}")
+            
         return True
         
     except Exception as e:

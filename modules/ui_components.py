@@ -144,7 +144,7 @@ class VentanaPrincipal:
         
         # Configurar tamaño - Adaptable a diferentes resoluciones
         ancho = 1200
-        alto = 700
+        alto = 590
         x = (self.root.winfo_screenwidth() // 2) - (ancho // 2)
         y = (self.root.winfo_screenheight() // 2) - (alto // 2)
         self.root.geometry(f'{ancho}x{alto}+{x}+{y}')
@@ -1790,22 +1790,25 @@ class VentanaHistorial:
         
         if messagebox.askyesno("Confirmar Pago", "¿Marcar esta cuota como PAGADA y generar recibo?"):
             try:
-                from modules.cuotas import pagar_cuota, get_cuotas_connection
+                from modules.cuotas import pagar_cuota, get_cuotas_connection, calcular_sobrecargo_acumulado
                 from modules.reports import generar_recibo_cuota_pdf_temporal, abrir_pdf, imprimir_recibo_y_limpiar
                 
-                # Obtener sobrecargo desde la base de datos (tipos_cuota.sobrecargo_habilitado)
+                # Obtener sobrecargo desde la base de datos
                 conn = get_cuotas_connection()
                 cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT tc.sobrecargo_habilitado
+                
+                cursor.execute('''
+                    SELECT cc.fecha_asignacion, tc.sobrecargo_habilitado
                     FROM cuotas_campesinos cc
                     JOIN tipos_cuota tc ON cc.tipo_cuota_id = tc.id
                     WHERE cc.id = ?
-                """, (cuota_id,))
-                row = cursor.fetchone()
-                conn.close()
+                ''', (cuota_id,))
                 
-                sobrecargo = 50.0 if (row and row['sobrecargo_habilitado']) else 0.0
+                row = cursor.fetchone()
+                sobrecargo = 0.0
+                
+                if row and row['sobrecargo_habilitado']:
+                    sobrecargo = calcular_sobrecargo_acumulado(row['fecha_asignacion'])
                 
                 resultado = pagar_cuota(cuota_id, sobrecargo=sobrecargo)
                 
@@ -2285,11 +2288,11 @@ class VentanaEstadisticas:
         # Obtener estadísticas del cultivo específico
         stats_cultivo = obtener_estadisticas_por_cultivo(cultivo)
         
-        mensaje = f"""📊 ESTADÍSTICAS DE {cultivo.upper()}
-            👥 Campesinos: {stats_cultivo['total_campesinos']}
-            🌾 Hectáreas: {stats_cultivo['total_hectareas']} ha
-            💧 Riegos promedio: {stats_cultivo['riegos_promedio']}
-            📊 Total de riegos: {stats_cultivo['total_riegos']}"""
+        mensaje = f"""ESTADÍSTICAS DE {cultivo.upper()}
+            Campesinos: {stats_cultivo['total_campesinos']}
+            Hectáreas: {stats_cultivo['total_hectareas']} ha
+            Riegos promedio: {stats_cultivo['riegos_promedio']}
+            Total de riegos: {stats_cultivo['total_riegos']}"""
         
         messagebox.showinfo(f"Cultivo: {cultivo}", mensaje)
     
@@ -3707,7 +3710,7 @@ class VentanaDetalleCuota:
     
     def cargar_detalle(self):
         """Carga el detalle de la cuota"""
-        from modules.cuotas import obtener_resumen_cuota, obtener_tipos_cuota_activos
+        from modules.cuotas import obtener_resumen_cuota, obtener_tipos_cuota_activos, calcular_sobrecargo_acumulado
         from modules.models import get_connection as get_riego_connection
         
         # Obtener nombre de la cuota
@@ -3741,11 +3744,11 @@ class VentanaDetalleCuota:
         # Obtener resumen
         resumen = obtener_resumen_cuota(self.tipo_cuota_id)
         
-        texto_resumen = f"""
-        Total Asignados: {resumen['total_asignados']}
-        Total Pagados: {resumen['total_pagados']} | Monto Recaudado: ${resumen['monto_recaudado']:.2f}
-        Total Pendientes: {resumen['total_pendientes']} | Monto Pendiente: ${resumen['monto_pendiente']:.2f}
-                """
+        texto_resumen = (
+            f"Total Asignados: {resumen['total_asignados']}\n"
+            f"Total Pagados: {resumen['total_pagados']} | Monto Recaudado: ${resumen['monto_recaudado']:.2f}\n"
+            f"Total Pendientes: {resumen['total_pendientes']} | Monto Pendiente: ${resumen['monto_pendiente']:.2f}"
+        )
         self.label_resumen.config(text=texto_resumen.strip())
         
         # Cargar campesinos
@@ -3764,7 +3767,12 @@ class VentanaDetalleCuota:
             # Calcular monto a mostrar (con sobrecargo si aplica)
             monto_base = cuota['monto']
             tiene_sobrecargo = self.var_sobrecargo.get()
-            monto_mostrar = monto_base + 50.0 if tiene_sobrecargo else monto_base
+            
+            sobrecargo_monto = 0.0
+            if tiene_sobrecargo and not cuota['pagado']:
+                sobrecargo_monto = calcular_sobrecargo_acumulado(cuota['fecha_asignacion'])
+                
+            monto_mostrar = monto_base + sobrecargo_monto
             
             # Formatear estado
             estado = "✅ PAGADO" if cuota['pagado'] else "⏳ PENDIENTE"
@@ -3829,13 +3837,13 @@ class VentanaDetalleCuota:
         if messagebox.askyesno("Confirmar Pago", 
                                "¿Marcar esta cuota como PAGADA y generar recibo?"):
             try:
-                from modules.cuotas import pagar_cuota, get_cuotas_connection
+                from modules.cuotas import pagar_cuota, get_cuotas_connection, calcular_sobrecargo_acumulado
                 
-                # Obtener sobrecargo desde la base de datos (tipos_cuota.sobrecargo_habilitado)
+                # Obtener sobrecargo desde la base de datos
                 conn = get_cuotas_connection()
                 cursor = conn.cursor()
                 cursor.execute("""
-                    SELECT tc.sobrecargo_habilitado
+                    SELECT tc.sobrecargo_habilitado, cc.fecha_asignacion
                     FROM cuotas_campesinos cc
                     JOIN tipos_cuota tc ON cc.tipo_cuota_id = tc.id
                     WHERE cc.id = ?
@@ -3843,7 +3851,9 @@ class VentanaDetalleCuota:
                 row = cursor.fetchone()
                 conn.close()
                 
-                sobrecargo = 50.0 if (row and row['sobrecargo_habilitado']) else 0.0
+                sobrecargo = 0.0
+                if row and row['sobrecargo_habilitado']:
+                    sobrecargo = calcular_sobrecargo_acumulado(row['fecha_asignacion'])
                 
                 resultado = pagar_cuota(cuota_campesino_id, sobrecargo=sobrecargo)
                 
@@ -4061,7 +4071,7 @@ class VentanaAsignarCuota:
 
 
 class VentanaReporteCuotas:
-    """Ventana con reporte general de todas las cuotas"""
+# """Ventana con reporte general de todas las cuotas.""
     
     def __init__(self, parent):
         self.ventana = tk.Toplevel(parent)
@@ -4074,7 +4084,7 @@ class VentanaReporteCuotas:
         self.cargar_estadisticas()
     
     def crear_widgets(self):
-        """Crea los widgets"""
+        "Crea los widgets."
         frame = ttk.Frame(self.frame_principal, padding=20)
         frame.pack(fill=tk.BOTH, expand=True)
         
@@ -4120,18 +4130,17 @@ class VentanaReporteCuotas:
                    command=self.ventana.destroy).pack(side=tk.RIGHT, padx=5)
     
     def cargar_estadisticas(self):
-        """Carga las estadísticas generales"""
         from modules.cuotas import obtener_estadisticas_generales_cuotas, obtener_todas_cuotas_con_estado
         
         stats = obtener_estadisticas_generales_cuotas()
         
-        texto = f"""
-        Total de Tipos de Cuotas: {stats['total_tipos_cuotas']}
-        Total de Cuotas Asignadas: {stats['total_cuotas_asignadas']}
-        Cuotas Pagadas: {stats['total_pagadas']} | Monto Recaudado: ${stats['monto_recaudado']:.2f}
-        Cuotas Pendientes: {stats['total_pendientes']} | Monto Pendiente: ${stats['monto_pendiente']:.2f}
-        Monto Total: ${stats['monto_total']:.2f}
-                """
+        texto = (
+            f"Total de Tipos de Cuotas: {stats['total_tipos_cuotas']}\n"
+            f"Total de Cuotas Asignadas: {stats['total_cuotas_asignadas']}\n"
+            f"Cuotas Pagadas: {stats['total_pagadas']} | Monto Recaudado: ${stats['monto_recaudado']:.2f}\n"
+            f"Cuotas Pendientes: {stats['total_pendientes']} | Monto Pendiente: ${stats['monto_pendiente']:.2f}\n"
+            f"Monto Total: ${stats['monto_total']:.2f}"
+        )
         
         self.label_stats.config(text=texto.strip())
         
@@ -4153,7 +4162,6 @@ class VentanaReporteCuotas:
                             ))
     
     def exportar_pdf_completo(self):
-        """Exporta PDF con todas las cuotas"""
         try:
             from modules.reports import generar_reporte_todas_cuotas_pdf
             

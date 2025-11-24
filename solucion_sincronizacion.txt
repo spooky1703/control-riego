@@ -1,0 +1,23 @@
+SOLUCIÓN: SINCRONIZACIÓN DE DATOS ENTRE RIEGO.DB Y CUOTAS.DB
+
+PROBLEMA:
+Al editar el nombre o la superficie de un campesino en la ventana principal (que afecta a `riego.db`), estos cambios no se reflejaban en la base de datos de cuotas (`cuotas.db`). Esto causaba inconsistencias en los nombres de los recibos y, más grave aún, montos incorrectos en las cuotas pendientes, ya que estas se calculan en base a la superficie (Regla de 3).
+
+SOLUCIÓN IMPLEMENTADA:
+
+1.  **Nueva Función de Sincronización (`modules/cuotas.py`):**
+    Se creó la función `actualizar_datos_campesino_en_cuotas(campesino_id, nuevos_datos)`.
+    Esta función realiza dos tareas principales:
+    *   **Actualización de Datos Básicos:** Actualiza el `nombre_campesino`, `numero_lote` y `barrio` en la tabla `cuotas_campesinos` para mantener la consistencia visual.
+    *   **Recálculo de Montos (Regla de 3):** Si se detecta un cambio en la `superficie`, la función busca todas las cuotas **PENDIENTES DE PAGO** de ese campesino. Para cada una, recalcula el monto a cobrar multiplicando la nueva superficie por la tarifa base del tipo de cuota.
+    *   *Nota:* Las cuotas ya pagadas NO se modifican para mantener la integridad histórica.
+
+2.  **Integración en el Modelo Principal (`modules/models.py`):**
+    Se modificaron las funciones que alteran los datos del campesino en `riego.db` para que llamen automáticamente a la función de sincronización.
+    *   `actualizar_campesino`: Se añadió la llamada para sincronizar ediciones generales.
+    *   `renombrar_campesino`: Se añadió la llamada para sincronizar cambios de nombre.
+    *   `actualizar_superficie_campesino`: Se añadió la llamada para sincronizar cambios de superficie.
+    *   `partir_lote`: Se añadió la llamada para actualizar la superficie del lote original tras una división.
+
+RESULTADO:
+Ahora, cualquier cambio realizado en la información del campesino desde la ventana principal se propaga inmediatamente a la base de datos de cuotas, asegurando que los cobros futuros siempre estén basados en la información más reciente.
