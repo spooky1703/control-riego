@@ -2802,7 +2802,7 @@ class VentanaGestorReportes:
         self.ventana.transient(parent)
         
         self.crear_widgets()
-        self.cargar_campesinos()
+        self.cargar_reportes()
     
     def crear_widgets(self):
         # Canvas con scrollbar
@@ -3517,7 +3517,10 @@ class VentanaNuevaCuota:
     
     def crear_widgets(self):
         """Crea los widgets"""
-        frame = ttk.Frame(self.ventana, padding=20)
+        # Canvas con scrollbar
+        self.canvas, self.frame_principal = crear_ventana_scrollable(self.ventana, None)
+        
+        frame = ttk.Frame(self.frame_principal, padding=20)
         frame.pack(fill=tk.BOTH, expand=True)
         
         ttk.Label(frame, text="CREAR NUEVA CUOTA", font=("Helvetica", 12, "bold")).pack(pady=10)
