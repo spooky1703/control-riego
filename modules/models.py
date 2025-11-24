@@ -503,8 +503,8 @@ def crear_recibo(datos: Dict) -> int:
     cursor.execute('''
         INSERT INTO recibos 
         (folio, fecha, hora, campesino_id, siembra_id, cultivo, numero_riego, 
-         tipo_accion, costo, ciclo, eliminado)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+         tipo_accion, costo, ciclo, cargo_documentos, eliminado)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     ''', (
         datos['folio'],
         datos['fecha'],
@@ -515,7 +515,8 @@ def crear_recibo(datos: Dict) -> int:
         datos['numero_riego'],
         datos['tipo_accion'],
         datos['costo'],
-        datos['ciclo']
+        datos['ciclo'],
+        datos.get('cargo_documentos', 0)
     ))
     recibo_id = cursor.lastrowid
     conn.commit()
@@ -1097,5 +1098,28 @@ def actualizar_superficie_campesino(campesino_id: int, nueva_superficie: float) 
     except Exception as e:
         conn.rollback()
         raise e
+    finally:
+        conn.close()
+
+def migrar_agregar_cargo_documentos():
+    """Migración: Agrega columna cargo_documentos a la tabla recibos"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Verificar si la columna ya existe
+        cursor.execute("PRAGMA table_info(recibos)")
+        columnas = [col[1] for col in cursor.fetchall()]
+        
+        if 'cargo_documentos' not in columnas:
+            # Agregar la columna
+            cursor.execute('ALTER TABLE recibos ADD COLUMN cargo_documentos BOOLEAN DEFAULT 0')
+            conn.commit()
+            print("✓ Columna cargo_documentos agregada a tabla recibos")
+        else:
+            print("✓ La columna cargo_documentos ya existe en tabla recibos")
+    except Exception as e:
+        print(f"Error en migración cargo_documentos: {e}")
+        conn.rollback()
     finally:
         conn.close()

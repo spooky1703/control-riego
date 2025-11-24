@@ -58,52 +58,54 @@ def crear_ventana_scrollable(parent_ventana, contenido_frame):
       2. Llamar a esta función: canvas, scrollable_frame = crear_ventana_scrollable(ventana, None)
       3. Colocar widgets en scrollable_frame
     """
-    import platform
+    # Canvas para el scroll
+    canvas = tk.Canvas(parent_ventana, highlightthickness=0, bd=0)
+    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     
-    # Crear frame para canvas y scrollbar
-    frame_canvas = ttk.Frame(parent_ventana)
-    frame_canvas.pack(fill=tk.BOTH, expand=True)
+    # Scrollbar vertical
+    scrollbar = ttk.Scrollbar(parent_ventana, orient=tk.VERTICAL, command=canvas.yview)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     
-    # Crear canvas
-    canvas = tk.Canvas(frame_canvas, bg='white', highlightthickness=0)
-    scrollbar = ttk.Scrollbar(frame_canvas, orient=tk.VERTICAL, command=canvas.yview)
-    scrollable_frame = ttk.Frame(canvas)
-    
-    # Actualizar scroll region cuando cambie el tamaño
-    def _configure_scroll_region(event=None):
-        canvas.configure(scrollregion=canvas.bbox("all"))
-    
-    scrollable_frame.bind("<Configure>", _configure_scroll_region)
-    
-    # Crear ventana en canvas
-    canvas_window = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
     canvas.configure(yscrollcommand=scrollbar.set)
     
-    # Ajustar ancho del scrollable_frame al canvas
+    # Frame scrollable dentro del canvas
+    scrollable_frame = ttk.Frame(canvas)
+    canvas_window = canvas.create_window((0, 0), window=scrollable_frame, anchor=tk.NW)
+    
+    def _configure_scroll_region(event=None):
+        """Actualiza la región de scroll cuando cambia el contenido"""
+        canvas.configure(scrollregion=canvas.bbox("all"))
+    
+    scrollable_frame.bind('<Configure>', _configure_scroll_region)
+    
+    # Ajustar ancho del frame al canvas
     def _configure_canvas_width(event):
-        canvas.itemconfig(canvas_window, width=event.width)
+        """Ajusta el ancho del frame scrollable al ancho del canvas"""
+        canvas_width = event.width
+        canvas.itemconfig(canvas_window, width=canvas_width)
     
     canvas.bind('<Configure>', _configure_canvas_width)
     
-    # ===== SOPORTE RUEDA DE RATÓN Y TRACKPAD =====
+    # Detectar sistema operativo
+    sistema = platform.system()
+    
+    # Funciones de scroll según el SO
     def _on_scroll_windows(event):
         """Maneja scroll con rueda de ratón en Windows"""
         canvas.yview_scroll(int(-1*(event.delta/120)), "units")
     
     def _on_scroll_linux(event):
         """Maneja scroll con rueda de ratón en Linux"""
-        if event.num == 5:
-            canvas.yview_scroll(1, "units")
-        elif event.num == 4:
+        if event.num == 4:
             canvas.yview_scroll(-1, "units")
+        elif event.num == 5:
+            canvas.yview_scroll(1, "units")
     
     def _on_scroll_mac(event):
         """Maneja scroll con trackpad/rueda en Mac"""
-        canvas.yview_scroll(int(-1*event.delta), "units")
+        canvas.yview_scroll(int(-1*(event.delta)), "units")
     
-    sistema = platform.system()
-    
-    # Bind específico para cada SO - SOLO al canvas
+    # Bind según el sistema operativo
     if sistema == "Windows":
         canvas.bind_all("<MouseWheel>", _on_scroll_windows)
     elif sistema == "Darwin":  # macOS
@@ -112,21 +114,20 @@ def crear_ventana_scrollable(parent_ventana, contenido_frame):
         canvas.bind_all("<Button-4>", _on_scroll_linux)
         canvas.bind_all("<Button-5>", _on_scroll_linux)
     
-    # Destruir bindings cuando se cierre la ventana
+    # Limpiar binds al cerrar la ventana
     def _cleanup():
-        if sistema == "Windows":
-            canvas.unbind_all("<MouseWheel>")
-        elif sistema == "Darwin":
-            canvas.unbind_all("<MouseWheel>")
-        else:
-            canvas.unbind_all("<Button-4>")
-            canvas.unbind_all("<Button-5>")
+        try:
+            if sistema == "Windows":
+                canvas.unbind_all("<MouseWheel>")
+            elif sistema == "Darwin":
+                canvas.unbind_all("<MouseWheel>")
+            else:
+                canvas.unbind_all("<Button-4>")
+                canvas.unbind_all("<Button-5>")
+        except:
+            pass
     
     parent_ventana.bind("<Destroy>", lambda e: _cleanup() if e.widget == parent_ventana else None)
-    
-    # Empaquetar
-    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     
     # Permitir que canvas reciba focus para eventos de teclado
     canvas.focus_set()
@@ -504,6 +505,9 @@ class VentanaVenta:
         self.tipo = tipo
         self.ventana_principal = ventana_principal
         
+        # Variable para checkbox de cargo extra
+        self.var_cargo_documentos = tk.BooleanVar(value=False)
+        
         # ===== USAR SCROLLBAR =====
         self.canvas, self.frame_principal = crear_ventana_scrollable(self.ventana, None)
         
@@ -588,21 +592,32 @@ class VentanaVenta:
                 self.combo_cultivo.current(idx)
                 self.combo_cultivo.config(state='disabled')
         
+        # Frame de checkbox de cargo extra
+        frame_cargo = ttk.LabelFrame(self.frame_principal, text="📄 Opciones de Cobro", padding="10")
+        frame_cargo.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Checkbutton(frame_cargo,
+                       text="📄 Cargo extra por documentos (precio x2)",
+                       variable=self.var_cargo_documentos,
+                       command=self.actualizar_monto_mostrado).pack(anchor=tk.W, pady=5)
+        
         # Frame de costo
         frame_costo = ttk.LabelFrame(self.frame_principal, text="💰 Monto a Cobrar", padding="15")
         frame_costo.pack(fill=tk.X, padx=10, pady=10)
         
         costo = calcular_costo(self.campesino['superficie'])
-        ttk.Label(frame_costo,
+        self.label_costo = ttk.Label(frame_costo,
                   text=f"${costo:,.2f}",
                   font=('Helvetica', 20, 'bold'),
-                  foreground='green').pack()
+                  foreground='green')
+        self.label_costo.pack()
         
         tarifa = obtener_configuracion('tarifa_hectarea')
-        ttk.Label(frame_costo,
+        self.label_tarifa = ttk.Label(frame_costo,
                   text=f"({self.campesino['superficie']} ha × ${tarifa}/ha)",
                   font=('Helvetica', 9),
-                  foreground='gray').pack()
+                  foreground='gray')
+        self.label_tarifa.pack()
         
         # Frame de botones
         frame_botones = ttk.Frame(self.frame_principal)
@@ -621,6 +636,26 @@ class VentanaVenta:
     def abrir_editar_siembra_riego(self):
         """Abre la ventana para editar siembra y riego"""
         VentanaEditarSiembraRiego(self.ventana, self.campesino['id'], self.campesino['nombre'], self.ventana_principal)
+    
+    def actualizar_monto_mostrado(self):
+        """Actualiza el monto mostrado cuando cambia el checkbox de cargo extra"""
+        costo_base = calcular_costo(self.campesino['superficie'])
+        
+        if self.var_cargo_documentos.get():
+            costo_final = costo_base * 2
+            tarifa = obtener_configuracion('tarifa_hectarea')
+            self.label_costo.config(text=f"${costo_final:,.2f}", foreground='red')
+            self.label_tarifa.config(
+                text=f"({self.campesino['superficie']} ha × ${tarifa}/ha × 2 = CARGO POR DOCUMENTOS)",
+                foreground='red'
+            )
+        else:
+            tarifa = obtener_configuracion('tarifa_hectarea')
+            self.label_costo.config(text=f"${costo_base:,.2f}", foreground='green')
+            self.label_tarifa.config(
+                text=f"({self.campesino['superficie']} ha × ${tarifa}/ha)",
+                foreground='gray'
+            )
     
     def on_cambiar_accion(self):
         """Maneja el cambio de acción"""
@@ -644,13 +679,14 @@ class VentanaVenta:
         try:
             accion = self.var_accion.get()
             cultivo = self.combo_cultivo.get()
+            cargo_docs = self.var_cargo_documentos.get()
             
-            # Generar venta
+            # Generar venta con cargo por documentos si está marcado
             if accion == 'nueva':
-                resultado = nueva_siembra(self.campesino['id'], cultivo)
+                resultado = nueva_siembra(self.campesino['id'], cultivo, cargo_documentos=cargo_docs)
                 tipo_texto = "Nueva siembra"
             else:
-                resultado = vender_riego(self.campesino['id'])
+                resultado = vender_riego(self.campesino['id'], cargo_documentos=cargo_docs)
                 tipo_texto = "Riego adicional"
             
             # Generar recibo temporal
@@ -1724,10 +1760,13 @@ class VentanaHistorial:
                 estado = "✅ PAGADO" if cuota['pagado'] else "⏳ PENDIENTE"
                 fecha_pago = cuota['fecha_pago'] if cuota['fecha_pago'] else "-"
                 
+                # Usar monto pagado si existe (incluye sobrecargo), sino monto base
+                monto_mostrar = cuota.get('monto_pagado') if cuota.get('monto_pagado') else cuota['monto']
+                
                 self.tree_cuotas.insert('', tk.END,
                                 values=(
                                     cuota['nombre_tipo_cuota'],
-                                    f"${cuota['monto']:.2f}",
+                                    f"${monto_mostrar:.2f}",
                                     estado,
                                     fecha_pago
                                 ),
@@ -1751,10 +1790,24 @@ class VentanaHistorial:
         
         if messagebox.askyesno("Confirmar Pago", "¿Marcar esta cuota como PAGADA y generar recibo?"):
             try:
-                from modules.cuotas import pagar_cuota
+                from modules.cuotas import pagar_cuota, get_cuotas_connection
                 from modules.reports import generar_recibo_cuota_pdf_temporal, abrir_pdf, imprimir_recibo_y_limpiar
                 
-                resultado = pagar_cuota(cuota_id)
+                # Obtener sobrecargo desde la base de datos (tipos_cuota.sobrecargo_habilitado)
+                conn = get_cuotas_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT tc.sobrecargo_habilitado
+                    FROM cuotas_campesinos cc
+                    JOIN tipos_cuota tc ON cc.tipo_cuota_id = tc.id
+                    WHERE cc.id = ?
+                """, (cuota_id,))
+                row = cursor.fetchone()
+                conn.close()
+                
+                sobrecargo = 50.0 if (row and row['sobrecargo_habilitado']) else 0.0
+                
+                resultado = pagar_cuota(cuota_id, sobrecargo=sobrecargo)
                 
                 # Generar PDF
                 pdf_path = generar_recibo_cuota_pdf_temporal(resultado['recibo_id'])
@@ -2301,7 +2354,10 @@ class VentanaRenombrarCampesino:
         self.crear_widgets()
     
     def crear_widgets(self):
-        frame = ttk.Frame(self.ventana, padding="20")
+        # Canvas con scrollbar
+        self.canvas, self.frame_principal = crear_ventana_scrollable(self.ventana, None)
+        
+        frame = ttk.Frame(self.frame_principal, padding="20")
         frame.pack(fill=tk.BOTH, expand=True)
         
         ttk.Label(frame, text=f"📋 Lote: {self.lote}", 
@@ -2540,7 +2596,10 @@ class VentanaEditarLote:
         self.crear_widgets()
     
     def crear_widgets(self):
-        frame = ttk.Frame(self.ventana, padding="20")
+        # Canvas con scrollbar
+        self.canvas, self.frame_principal = crear_ventana_scrollable(self.ventana, None)
+        
+        frame = ttk.Frame(self.frame_principal, padding="20")
         frame.pack(fill=tk.BOTH, expand=True)
         
         # Título
@@ -2652,7 +2711,10 @@ class VentanaEditarSuperficie:
         self.crear_widgets()
     
     def crear_widgets(self):
-        frame = ttk.Frame(self.ventana, padding="20")
+        # Canvas con scrollbar
+        self.canvas, self.frame_principal = crear_ventana_scrollable(self.ventana, None)
+        
+        frame = ttk.Frame(self.frame_principal, padding="20")
         frame.pack(fill=tk.BOTH, expand=True)
         
         ttk.Label(frame, text=f"📐 EDITAR SUPERFICIE - LOTE {self.lote}", 
@@ -2740,10 +2802,13 @@ class VentanaGestorReportes:
         self.ventana.transient(parent)
         
         self.crear_widgets()
-        self.cargar_reportes()
+        self.cargar_campesinos()
     
     def crear_widgets(self):
-        frame = ttk.Frame(self.ventana, padding=10)
+        # Canvas con scrollbar
+        self.canvas, self.frame_principal = crear_ventana_scrollable(self.ventana, None)
+        
+        frame = ttk.Frame(self.frame_principal, padding="20")
         frame.pack(fill=tk.BOTH, expand=True)
         
         ttk.Label(frame, text="GESTOR DE REPORTES", font=("Helvetica", 14, "bold")).pack(pady=10)
@@ -3343,15 +3408,17 @@ class VentanaGestionarCuotas:
     
     def crear_widgets(self):
         """Crea los widgets de la ventana"""
-        frame_principal = ttk.Frame(self.frame_principal, padding=20)
-        frame_principal.pack(fill=tk.BOTH, expand=True)
+        frame_content = ttk.Frame(self.frame_principal, padding=20)
+        frame_content.pack(fill=tk.BOTH, expand=True)
         
-        # TÍTULO
-        ttk.Label(frame_principal, text="GESTIÓN DE CUOTAS DE COOPERACIÓN", 
-                  font=("Helvetica", 14, "bold")).pack(pady=10)
+        frame_superior = ttk.Frame(frame_content)
+        frame_superior.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Label(frame_superior, text="GESTIÓN DE CUOTAS", 
+                  font=("Helvetica", 14, "bold")).pack()
         
         # BOTONES DE ACCIÓN
-        frame_acciones = ttk.Frame(frame_principal)
+        frame_acciones = ttk.Frame(frame_content)
         frame_acciones.pack(fill=tk.X, pady=10)
         
         ttk.Button(frame_acciones, text="➕ Nueva Cuota", 
@@ -3360,7 +3427,7 @@ class VentanaGestionarCuotas:
                    command=self.ver_todas_cuotas, width=20).pack(side=tk.LEFT, padx=5)
         
         # LISTA DE TIPOS DE CUOTAS
-        frame_lista = ttk.LabelFrame(frame_principal, text="Cuotas Disponibles", padding=10)
+        frame_lista = ttk.LabelFrame(frame_content, text="Cuotas Disponibles", padding=10)
         frame_lista.pack(fill=tk.BOTH, expand=True, pady=10)
         
         columnas = ('nombre', 'monto', 'asignados', 'pagados', 'pendientes', 'recaudado')
@@ -3390,7 +3457,7 @@ class VentanaGestionarCuotas:
         self.tree.bind('<Double-1>', self.on_doble_click_cuota)
         
         # BOTONES INFERIORES
-        frame_botones = ttk.Frame(frame_principal)
+        frame_botones = ttk.Frame(frame_content)
         frame_botones.pack(fill=tk.X, pady=10)
         
         ttk.Button(frame_botones, text="🔄 Actualizar", 
@@ -3556,6 +3623,9 @@ class VentanaDetalleCuota:
         self.tipo_cuota_id = tipo_cuota_id
         self.ventana_gestionar = ventana_gestionar
         
+        # Variable para checkbox de sobrecargo (se carga del tipo de cuota)
+        self.var_sobrecargo = tk.BooleanVar(value=False)
+        
         self.canvas, self.frame_principal = crear_ventana_scrollable(self.ventana, None)
         self.crear_widgets()
         self.cargar_detalle()
@@ -3576,14 +3646,22 @@ class VentanaDetalleCuota:
         self.label_resumen = ttk.Label(frame_resumen, text="", font=("Helvetica", 10))
         self.label_resumen.pack()
         
-        # Botones de acción
-        frame_acciones = ttk.Frame(frame)
-        frame_acciones.pack(fill=tk.X, pady=10)
+        # Frame de botones
+        frame_botones = ttk.Frame(frame)
+        frame_botones.pack(fill=tk.X, pady=10)
         
-        ttk.Button(frame_acciones, text="➕ Asignar a Campesino", 
+        # Checkbox de sobrecargo (específico para este tipo de cuota)
+        ttk.Checkbutton(frame_botones,
+                       text="💰 COBRAR SOBRECARGO (+$50 mensual) para esta cuota",
+                       variable=self.var_sobrecargo,
+                       command=self.actualizar_sobrecargo).pack(side=tk.LEFT, padx=10)
+        
+        ttk.Button(frame_botones, text="➕ Asignar a Campesino",
                    command=self.asignar_a_campesino).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame_acciones, text="📄 Exportar PDF Recaudación", 
+        ttk.Button(frame_botones, text="💾 Exportar PDF",
                    command=self.exportar_pdf).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="❌ Cerrar",
+                   command=self.ventana.destroy).pack(side=tk.RIGHT, padx=5)
         
         # Lista de campesinos con esta cuota
         frame_lista = ttk.LabelFrame(frame, text="Campesinos Asignados", padding=10)
@@ -3633,16 +3711,27 @@ class VentanaDetalleCuota:
         from modules.cuotas import get_cuotas_connection
         conn = get_cuotas_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT nombre, monto FROM tipos_cuota WHERE id = ?", (self.tipo_cuota_id,))
-        row = cursor.fetchone()
         
+        # Obtener datos del tipo de cuota
+        cursor.execute("""
+            SELECT * FROM tipos_cuota WHERE id = ?
+        """, (self.tipo_cuota_id,))
+        
+        row = cursor.fetchone()
         if not row:
-            messagebox.showerror("Error", "Cuota no encontrada")
-            self.ventana.destroy()
+            conn.close()
             return
         
         nombre_cuota = row['nombre']
         monto_cuota = row['monto']
+        
+        # Cargar estado del sobrecargo (con manejo de error si la columna no existe)
+        try:
+            sobrecargo_habilitado = row['sobrecargo_habilitado']
+        except (KeyError, IndexError):
+            sobrecargo_habilitado = 0
+        
+        self.var_sobrecargo.set(bool(sobrecargo_habilitado))
         
         self.label_titulo.config(text=f"Cuota: {nombre_cuota} (${monto_cuota:.2f})")
         
@@ -3669,19 +3758,55 @@ class VentanaDetalleCuota:
         self.tree.delete(*self.tree.get_children())
         
         for cuota in cuotas_campesinos:
+            # Calcular monto a mostrar (con sobrecargo si aplica)
+            monto_base = cuota['monto']
+            tiene_sobrecargo = self.var_sobrecargo.get()
+            monto_mostrar = monto_base + 50.0 if tiene_sobrecargo else monto_base
+            
+            # Formatear estado
             estado = "✅ PAGADO" if cuota['pagado'] else "⏳ PENDIENTE"
             fecha_pago = cuota['fecha_pago'] if cuota['fecha_pago'] else "-"
             
+            # Obtener folio (si está pagado)
+            folio_texto = str(cuota['recibo_folio']) if cuota['recibo_folio'] else "-"
+            
             self.tree.insert('', tk.END,
                             values=(
+                                folio_texto, # Usar recibo_folio o guion
                                 cuota['numero_lote'],
                                 cuota['nombre_campesino'],
                                 cuota['barrio'],
-                                f"${cuota['monto']:.2f}",
+                                f"${monto_mostrar:.2f}", # Use monto_mostrar
                                 estado,
                                 fecha_pago
                             ),
                             tags=(str(cuota['id']), str(cuota['pagado'])))
+    
+    def actualizar_sobrecargo(self):
+        """Actualiza el estado del sobrecargo en la base de datos cuando cambia el checkbox"""
+        try:
+            from modules.cuotas import get_cuotas_connection
+            conn = get_cuotas_connection()
+            cursor = conn.cursor()
+            
+            nuevo_estado = 1 if self.var_sobrecargo.get() else 0
+            
+            cursor.execute("""
+                UPDATE tipos_cuota
+                SET sobrecargo_habilitado = ?
+                WHERE id = ?
+            """, (nuevo_estado, self.tipo_cuota_id))
+            
+            conn.commit()
+            conn.close()
+            
+            print(f"✓ Sobrecargo {'activado' if nuevo_estado else 'desactivado'} para tipo de cuota {self.tipo_cuota_id}")
+            
+            # Recargar la lista para mostrar los montos actualizados
+            self.cargar_detalle()
+            
+        except Exception as e:
+            print(f"Error al actualizar sobrecargo: {e}")
     
     def on_doble_click_pagar(self, event):
         """Marca una cuota como pagada al hacer doble click"""
@@ -3701,9 +3826,23 @@ class VentanaDetalleCuota:
         if messagebox.askyesno("Confirmar Pago", 
                                "¿Marcar esta cuota como PAGADA y generar recibo?"):
             try:
-                from modules.cuotas import pagar_cuota
+                from modules.cuotas import pagar_cuota, get_cuotas_connection
                 
-                resultado = pagar_cuota(cuota_campesino_id)
+                # Obtener sobrecargo desde la base de datos (tipos_cuota.sobrecargo_habilitado)
+                conn = get_cuotas_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT tc.sobrecargo_habilitado
+                    FROM cuotas_campesinos cc
+                    JOIN tipos_cuota tc ON cc.tipo_cuota_id = tc.id
+                    WHERE cc.id = ?
+                """, (cuota_campesino_id,))
+                row = cursor.fetchone()
+                conn.close()
+                
+                sobrecargo = 50.0 if (row and row['sobrecargo_habilitado']) else 0.0
+                
+                resultado = pagar_cuota(cuota_campesino_id, sobrecargo=sobrecargo)
                 
                 # Generar y mostrar recibo
                 from modules.reports import generar_recibo_cuota_pdf_temporal, abrir_pdf
@@ -3774,10 +3913,14 @@ class VentanaAsignarCuota:
         self.ventana_detalle = ventana_detalle
         
         self.crear_widgets()
+        self.cargar_campesinos()
     
     def crear_widgets(self):
         """Crea los widgets"""
-        frame = ttk.Frame(self.ventana, padding=20)
+        # Canvas con scrollbar
+        self.canvas, self.frame_principal = crear_ventana_scrollable(self.ventana, None)
+        
+        frame = ttk.Frame(self.frame_principal, padding=20)
         frame.pack(fill=tk.BOTH, expand=True)
         
         ttk.Label(frame, text="ASIGNAR CUOTA A CAMPESINO", 
@@ -3828,9 +3971,9 @@ class VentanaAsignarCuota:
                    command=self.ventana.destroy).pack(side=tk.RIGHT, padx=5)
         
         # Cargar todos los campesinos al inicio
-        self.cargar_todos()
+        self.cargar_campesinos()
     
-    def cargar_todos(self):
+    def cargar_campesinos(self):
         """Carga todos los campesinos"""
         from modules.models import obtener_todos_campesinos
         

@@ -238,7 +238,7 @@ def _dibujar_recibo_principal(c, recibo: Dict, nombre_oficina: str, ubicacion: s
     """
     
     # ===== COLORES =====
-    COLOR_VERDE = colors.HexColor('#B8D1BF')
+    COLOR_VERDE = colors.HexColor('#B8D1BF')  # Verde original para recibos de venta
     COLOR_BEIGE = colors.HexColor('#FFFFFF')
     COLOR_BEIGE_OSCURO = colors.HexColor('#C9B99A')
     COLOR_TEXTO = colors.HexColor('#2C3E2E')
@@ -334,7 +334,15 @@ def _dibujar_recibo_principal(c, recibo: Dict, nombre_oficina: str, ubicacion: s
     y_pos -= 0.3*cm
     c.setFillColor(COLOR_TEXTO_GRIS)
     c.setFont("Helvetica", 8)
-    c.drawString(0.8*cm, y_pos, "Concepto: Pago de cuota de riego para el ciclo agrícola")
+    concepto_texto = "Concepto: Pago de cuota de riego para el ciclo agrícola"
+    
+    # Verificar si hay cargo por documentos
+    if recibo.get('cargo_documentos'):
+        concepto_texto += " - ⚠️ CARGO EXTRA POR DOCUMENTOS (PRECIO X2)"
+        c.setFillColor(colors.HexColor('#FF0000'))  # Rojo para destacar
+        c.setFont("Helvetica-Bold", 8)
+    
+    c.drawString(0.8*cm, y_pos, concepto_texto)
     
     # ===== TOTAL + MONTO (más espacio y texto más grande) =====
     y_pos -= 0.5*cm
@@ -497,6 +505,9 @@ def generar_reporte_diario(fecha: str, recibos: List[Dict]) -> str:
             c.drawString(col_x[4], y_pos, recibo['cultivo'])
             c.drawString(col_x[5], y_pos, str(recibo['numero_riego']))
             tipo = "Nueva" if recibo['tipo_accion'] == 'Nueva siembra' else "Adicional"
+            # Agregar indicador de cargo extra si aplica
+            if recibo.get('cargo_documentos'):
+                tipo += " (📄)"
             c.drawString(col_x[6], y_pos, tipo)
             c.drawRightString(col_x[7] + 2*cm, y_pos, f"${recibo['costo']:.2f}")
             total_dia += recibo['costo']
@@ -1784,7 +1795,7 @@ def dibujar_recibo_cuota(c, recibo: Dict, nombre_oficina: str, ubicacion: str):
     """Dibuja el recibo de cuota de cooperación (similar al diseño de riegos)"""
     
     # COLORES
-    COLOR_VERDE = colors.HexColor('#B8D1BF')
+    COLOR_VERDE = colors.HexColor('#A8DADC')  # Azul pastel claro
     COLOR_BEIGE = colors.HexColor('#FFFFFF')
     COLOR_BEIGE_OSCURO = colors.HexColor('#C9B99A')
     COLOR_TEXTO = colors.HexColor('#2C3E2E')
@@ -1864,6 +1875,14 @@ def dibujar_recibo_cuota(c, recibo: Dict, nombre_oficina: str, ubicacion: str):
     c.setFillColor(COLOR_TEXTO_GRIS)
     c.setFont("Helvetica", 8)
     c.drawString(0.8*cm, ypos, f"Concepto: {recibo['nombre_cuota']}")
+    
+    # Verificar si hay sobrecargo
+    sobrecargo = recibo.get('sobrecargo', 0)
+    if sobrecargo > 0:
+        ypos -= 0.35*cm
+        c.setFillColor(colors.HexColor('#FF6B00'))  # Naranja para destacar
+        c.setFont("Helvetica-Bold", 8.5)
+        c.drawString(0.8*cm, ypos, f"⚠️ SOBRECARGO MENSUAL: +${sobrecargo:.2f}")
     
     # TOTAL
     ypos -= 0.5*cm

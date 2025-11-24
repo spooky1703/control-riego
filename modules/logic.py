@@ -241,9 +241,9 @@ def actualizar_folio_actual(nuevo_folio: int) -> bool:
 
 # ==================== OPERACIONES DE VENTA ====================
 
-def nueva_siembra(campesino_id: int, cultivo: str) -> Dict:
+def nueva_siembra(campesino_id: int, cultivo: str, cargo_documentos: bool = False) -> Dict:
 
-    """Inicia una nueva siembra para un campesino"""
+    """Inicia una nueva siembra para un campesino con opción de cargo por documentos (duplica precio)"""
 
     campesino = obtener_campesino_por_id(campesino_id)
 
@@ -273,7 +273,9 @@ def nueva_siembra(campesino_id: int, cultivo: str) -> Dict:
 
         "Nueva siembra",
 
-        ciclo_actual
+        ciclo_actual,
+
+        cargo_documentos
 
     )
 
@@ -305,9 +307,9 @@ def nueva_siembra(campesino_id: int, cultivo: str) -> Dict:
 
     }
 
-def vender_riego(campesino_id: int) -> Dict:
+def vender_riego(campesino_id: int, cargo_documentos: bool = False) -> Dict:
 
-    """Vende un riego adicional a un campesino con siembra activa"""
+    """Vende un riego adicional a un campesino con siembra activa, con opción de cargo por documentos (duplica precio)"""
 
     campesino = obtener_campesino_por_id(campesino_id)
 
@@ -337,7 +339,9 @@ def vender_riego(campesino_id: int) -> Dict:
 
         "Riego adicional",
 
-        ciclo_actual
+        ciclo_actual,
+
+        cargo_documentos
 
     )
 
@@ -371,7 +375,7 @@ def vender_riego(campesino_id: int) -> Dict:
 
     }
 
-def _generar_datos_recibo(campesino: Dict, siembra_id: int, cultivo: str, numero_riego: int, tipo_accion: str, ciclo: str) -> Dict:
+def _generar_datos_recibo(campesino: Dict, siembra_id: int, cultivo: str, numero_riego: int, tipo_accion: str, ciclo: str, cargo_documentos: bool = False) -> Dict:
 
     """Genera los datos para crear un recibo (función auxiliar)"""
 
@@ -384,6 +388,12 @@ def _generar_datos_recibo(campesino: Dict, siembra_id: int, cultivo: str, numero
     hora = ahora.strftime('%H:%M:%S')
 
     costo = calcular_costo(campesino['superficie'])
+
+    # Si hay cargo por documentos, duplicar el costo
+
+    if cargo_documentos:
+
+        costo = costo * 2
 
     return {
 
@@ -405,7 +415,9 @@ def _generar_datos_recibo(campesino: Dict, siembra_id: int, cultivo: str, numero
 
         'costo': costo,
 
-        'ciclo': ciclo
+        'ciclo': ciclo,
+
+        'cargo_documentos': 1 if cargo_documentos else 0
 
     }
 

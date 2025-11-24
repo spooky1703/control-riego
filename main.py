@@ -17,8 +17,17 @@ def main():
         # ✅ INICIALIZAR BASE DE DATOS DE CUOTAS (SEPARADA)
         print("Inicializando base de datos de CUOTAS...")
         init_cuotas_db()
+        
+        # Ejecutar migraciones
+        print("Ejecutando migraciones...")
+        from modules.models import migrar_agregar_cargo_documentos
+        from modules.cuotas import migrar_agregar_sobrecargo, migrar_sobrecargo_por_tipo
+        
         migrar_folios_individuales()
-        recrear_tabla_recibos_cuotas()  # ✅ AGREGAR ESTO
+        recrear_tabla_recibos_cuotas()
+        migrar_agregar_cargo_documentos()
+        migrar_agregar_sobrecargo()
+        migrar_sobrecargo_por_tipo()
 
         from modules.models import contar_campesinos
         

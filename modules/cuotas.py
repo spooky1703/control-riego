@@ -263,9 +263,10 @@ def obtener_cuotas_campesino(campesino_id: int) -> List[Dict]:
     cursor = conn.cursor()
     
     cursor.execute('''
-        SELECT cc.*, tc.nombre as nombre_tipo_cuota
+        SELECT cc.*, tc.nombre as nombre_tipo_cuota, rc.monto as monto_pagado, rc.sobrecargo
         FROM cuotas_campesinos cc
         JOIN tipos_cuota tc ON cc.tipo_cuota_id = tc.id
+        LEFT JOIN recibos_cuotas rc ON cc.recibo_folio = rc.folio
         WHERE cc.campesino_id = ?
         ORDER BY cc.fecha_asignacion DESC
     ''', (campesino_id,))
@@ -356,8 +357,8 @@ def obtener_todas_cuotas_con_estado() -> List[Dict]:
 
 # ==================== PAGO DE CUOTAS ====================
 
-def pagar_cuota(cuota_campesino_id: int) -> Dict:
-    """Marca una cuota como pagada y genera un recibo"""
+def pagar_cuota(cuota_campesino_id: int, sobrecargo: float = 0.0) -> Dict:
+    """Marca una cuota como pagada y genera un recibo con sobrecargo opcional"""
     conn = get_cuotas_connection()
     cursor = conn.cursor()
     
@@ -383,22 +384,26 @@ def pagar_cuota(cuota_campesino_id: int) -> Dict:
     folio = cuota['folio_actual']
     tipo_cuota_id = cuota['tipo_cuota_id']
     
+    # Calcular monto total (base + sobrecargo)
+    monto_base = cuota['monto']
+    monto_total = monto_base + sobrecargo
+    
     # Datos del recibo
     ahora = datetime.now()
     fecha = ahora.strftime('%Y-%m-%d')
     hora = ahora.strftime('%H:%M:%S')
     
-    # Crear recibo (✅ AHORA INCLUYE tipo_cuota_id)
+    # Crear recibo (✅ AHORA INCLUYE tipo_cuota_id y sobrecargo)
     cursor.execute('''
         INSERT INTO recibos_cuotas 
         (folio, tipo_cuota_id, fecha, hora, cuota_campesino_id, campesino_id, numero_lote, 
-         nombre_campesino, barrio, nombre_cuota, monto)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         nombre_campesino, barrio, nombre_cuota, monto, sobrecargo)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         folio, tipo_cuota_id, fecha, hora, cuota_campesino_id,
         cuota['campesino_id'], cuota['numero_lote'],
         cuota['nombre_campesino'], cuota['barrio'],
-        cuota['nombre_cuota'], cuota['monto']
+        cuota['nombre_cuota'], monto_total, sobrecargo
     ))
     
     recibo_id = cursor.lastrowid
@@ -426,7 +431,9 @@ def pagar_cuota(cuota_campesino_id: int) -> Dict:
         'folio': folio,
         'fecha': fecha,
         'hora': hora,
-        'monto': cuota['monto'],
+        'monto': monto_total,
+        'monto_base': monto_base,
+        'sobrecargo': sobrecargo,
         'nombre_cuota': cuota['nombre_cuota'],
         'numero_lote': cuota['numero_lote'],
         'nombre_campesino': cuota['nombre_campesino'],
@@ -627,6 +634,52 @@ def recrear_tabla_recibos_cuotas():
         
     except Exception as e:
         print(f"Error en migración: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
+def migrar_agregar_sobrecargo():
+    """Migración: Agrega columna sobrecargo a la tabla recibos_cuotas"""
+    conn = get_cuotas_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Verificar si la columna ya existe
+        cursor.execute("PRAGMA table_info(recibos_cuotas)")
+        columnas = [col[1] for col in cursor.fetchall()]
+        
+        if 'sobrecargo' not in columnas:
+            # Agregar la columna
+            cursor.execute('ALTER TABLE recibos_cuotas ADD COLUMN sobrecargo REAL DEFAULT 0.0')
+            conn.commit()
+            print("✓ Columna sobrecargo agregada a tabla recibos_cuotas")
+        else:
+            print("✓ La columna sobrecargo ya existe en tabla recibos_cuotas")
+    except Exception as e:
+        print(f"Error en migración sobrecargo: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
+def migrar_sobrecargo_por_tipo():
+    """Migración: Agrega columna sobrecargo_habilitado a la tabla tipos_cuota"""
+    conn = get_cuotas_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Verificar si la columna ya existe
+        cursor.execute("PRAGMA table_info(tipos_cuota)")
+        columnas = [col[1] for col in cursor.fetchall()]
+        
+        if 'sobrecargo_habilitado' not in columnas:
+            # Agregar la columna
+            cursor.execute('ALTER TABLE tipos_cuota ADD COLUMN sobrecargo_habilitado BOOLEAN DEFAULT 0')
+            conn.commit()
+            print("✓ Columna sobrecargo_habilitado agregada a tabla tipos_cuota")
+        else:
+            print("✓ La columna sobrecargo_habilitado ya existe en tabla tipos_cuota")
+    except Exception as e:
+        print(f"Error en migración sobrecargo_por_tipo: {e}")
         conn.rollback()
     finally:
         conn.close()
