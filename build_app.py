@@ -19,7 +19,7 @@ PyInstaller.__main__.run([
     '--name=SistemaRiego',              # Nombre del ejecutable
     '--onefile',                        # Un solo archivo
     '--windowed',                       # Sin consola (GUI pura)
-    '--icon=assets/zapata.png',         # Icono (si existe)
+    '--icon=assets/zapata.ico',         # Icono (si existe)
     
     # DATOS Y RECURSOS
     '--add-data=assets;assets',         # Incluir carpeta assets
@@ -29,9 +29,14 @@ PyInstaller.__main__.run([
     '--hidden-import=chardet',          # Para detección de encoding
     '--hidden-import=pandas',           # Para leer CSV
     '--hidden-import=openpyxl',         # Para Excel (pandas dependency)
-    '--hidden-import=openpyxl.styles',  # ✅ NUEVO: Estilos de Excel
-    '--hidden-import=openpyxl.utils',   # ✅ NUEVO: Utilidades de Excel
+    '--hidden-import=openpyxl.styles',  # Estilos de Excel
+    '--hidden-import=openpyxl.utils',   # Utilidades de Excel
     '--hidden-import=sqlite3',          # Base de datos
+    '--hidden-import=json',             # ✅ NUEVO: Para configuración y datos JSON
+    '--hidden-import=time',             # ✅ NUEVO: Manejo de tiempo (delays, timestamps)
+    '--hidden-import=sys',              # ✅ NUEVO: Sistema (paths, exit codes)
+    '--hidden-import=shutil',           # ✅ NUEVO: Operaciones de archivos (backups)
+    '--hidden-import=collections',      # ✅ NUEVO: Estructuras de datos
     
     # DEPENDENCIAS PYWIN32
     '--hidden-import=win32print',       
@@ -78,9 +83,19 @@ PyInstaller.__main__.run([
     '--hidden-import=tkinter.filedialog',
     '--hidden-import=tkinter.scrolledtext',
     '--hidden-import=tkinter.simpledialog',
+    '--hidden-import=tkinter.font',         # ✅ NUEVO: Fuentes personalizadas
     
+    # DEPENDENCIAS DE ENCODING Y STRINGS
+    '--hidden-import=encodings',            # ✅ NUEVO: Encodings para archivos
+    '--hidden-import=encodings.utf_8',      # ✅ NUEVO: UTF-8 encoding
+    '--hidden-import=encodings.cp1252',     # ✅ NUEVO: Windows encoding
+    '--hidden-import=string',               # ✅ NUEVO: Operaciones de strings
+    
+    # OPTIMIZACIONES Y FLAGS
     '--clean',                          # Limpiar cache
-    '--noconfirm',                      # ✅ NUEVO: No pedir confirmación
+    '--noconfirm',                      # No pedir confirmación
+    '--noupx',                          # ✅ NUEVO: Evitar falsos positivos de antivirus
+    '--log-level=WARN',                 # ✅ NUEVO: Solo mostrar warnings/errors
 ])
 
 
