@@ -28,6 +28,9 @@ def main():
         migrar_agregar_cargo_documentos()
         migrar_agregar_sobrecargo()
         migrar_sobrecargo_por_tipo()
+        
+        from modules.cuotas import migrar_abonos
+        migrar_abonos()
 
         from modules.models import contar_campesinos
         

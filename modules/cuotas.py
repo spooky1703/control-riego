@@ -48,11 +48,24 @@ def init_cuotas_db():
             nombre_campesino TEXT NOT NULL,
             barrio TEXT NOT NULL,
             monto REAL NOT NULL,
+            monto_pagado REAL DEFAULT 0.0,
             fecha_asignacion TEXT DEFAULT CURRENT_TIMESTAMP,
             pagado BOOLEAN DEFAULT 0,
             fecha_pago TEXT,
             recibo_folio INTEGER,
             FOREIGN KEY (tipo_cuota_id) REFERENCES tipos_cuota(id)
+        )
+    ''')
+    
+    # Tabla de ABONOS a cuotas
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS abonos_cuotas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cuota_campesino_id INTEGER NOT NULL,
+            monto REAL NOT NULL,
+            fecha TEXT NOT NULL,
+            hora TEXT NOT NULL,
+            FOREIGN KEY (cuota_campesino_id) REFERENCES cuotas_campesinos(id)
         )
     ''')
         # Tabla de recibos de cuotas
@@ -357,88 +370,155 @@ def obtener_todas_cuotas_con_estado() -> List[Dict]:
 
 # ==================== PAGO DE CUOTAS ====================
 
-def pagar_cuota(cuota_campesino_id: int, sobrecargo: float = 0.0) -> Dict:
-    """Marca una cuota como pagada y genera un recibo con sobrecargo opcional"""
+def registrar_abono(cuota_campesino_id: int, monto_abono: float) -> Dict:
+    """
+    Registra un abono a una cuota.
+    Si el abono cubre el total restante, marca la cuota como pagada y genera recibo.
+    Retorna un diccionario con el estado del pago.
+    """
     conn = get_cuotas_connection()
     cursor = conn.cursor()
     
-    # Obtener datos de la cuota
-    cursor.execute('''
-        SELECT cc.*, tc.nombre as nombre_cuota, tc.folio_actual
-        FROM cuotas_campesinos cc
-        JOIN tipos_cuota tc ON cc.tipo_cuota_id = tc.id
-        WHERE cc.id = ?
-    ''', (cuota_campesino_id,))
-    
-    cuota = cursor.fetchone()
-    
-    if not cuota:
+    try:
+        # Obtener datos de la cuota
+        cursor.execute('''
+            SELECT cc.*, tc.nombre as nombre_cuota, tc.folio_actual, tc.sobrecargo_habilitado
+            FROM cuotas_campesinos cc
+            JOIN tipos_cuota tc ON cc.tipo_cuota_id = tc.id
+            WHERE cc.id = ?
+        ''', (cuota_campesino_id,))
+        
+        cuota = cursor.fetchone()
+        
+        if not cuota:
+            raise ValueError("Cuota no encontrada")
+        
+        if cuota['pagado']:
+            raise ValueError("Esta cuota ya está totalmente pagada")
+            
+        # Calcular sobrecargo si aplica (para saber el total real a pagar)
+        sobrecargo = 0.0
+        if cuota['sobrecargo_habilitado']:
+            sobrecargo = calcular_sobrecargo_acumulado(cuota['fecha_asignacion'])
+            
+        monto_total_a_pagar = cuota['monto'] + sobrecargo
+        monto_pagado_actual = cuota['monto_pagado']
+        saldo_pendiente = monto_total_a_pagar - monto_pagado_actual
+        
+        if monto_abono > saldo_pendiente + 0.01: # Margen de error por float
+            raise ValueError(f"El abono (${monto_abono:.2f}) excede el saldo pendiente (${saldo_pendiente:.2f})")
+            
+        # Registrar el abono
+        ahora = datetime.now()
+        fecha = ahora.strftime('%Y-%m-%d')
+        hora = ahora.strftime('%H:%M:%S')
+        
+        cursor.execute('''
+            INSERT INTO abonos_cuotas (cuota_campesino_id, monto, fecha, hora)
+            VALUES (?, ?, ?, ?)
+        ''', (cuota_campesino_id, monto_abono, fecha, hora))
+        
+        # Actualizar monto pagado en la cuota
+        nuevo_monto_pagado = monto_pagado_actual + monto_abono
+        cursor.execute('UPDATE cuotas_campesinos SET monto_pagado = ? WHERE id = ?', 
+                       (nuevo_monto_pagado, cuota_campesino_id))
+        
+        # Verificar si se completó el pago (con pequeña tolerancia por float)
+        se_completo_pago = nuevo_monto_pagado >= (monto_total_a_pagar - 0.01)
+        
+        datos_recibo = None
+        
+        if se_completo_pago:
+            # ===== GENERAR RECIBO POR EL TOTAL =====
+            folio = cuota['folio_actual']
+            tipo_cuota_id = cuota['tipo_cuota_id']
+            
+            # Crear recibo
+            cursor.execute('''
+                INSERT INTO recibos_cuotas 
+                (folio, tipo_cuota_id, fecha, hora, cuota_campesino_id, campesino_id, numero_lote, 
+                 nombre_campesino, barrio, nombre_cuota, monto, sobrecargo)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                folio, tipo_cuota_id, fecha, hora, cuota_campesino_id,
+                cuota['campesino_id'], cuota['numero_lote'],
+                cuota['nombre_campesino'], cuota['barrio'],
+                cuota['nombre_cuota'], monto_total_a_pagar, sobrecargo
+            ))
+            
+            recibo_id = cursor.lastrowid
+            
+            # Marcar cuota como pagada
+            cursor.execute('''
+                UPDATE cuotas_campesinos 
+                SET pagado = 1, fecha_pago = ?, recibo_folio = ?
+                WHERE id = ?
+            ''', (fecha, folio, cuota_campesino_id))
+            
+            # Incrementar folio
+            cursor.execute('UPDATE tipos_cuota SET folio_actual = folio_actual + 1 WHERE id = ?', (tipo_cuota_id,))
+            
+            datos_recibo = {
+                'recibo_id': recibo_id,
+                'folio': folio,
+                'monto_total': monto_total_a_pagar
+            }
+            
+        conn.commit()
+        
+        return {
+            'exito': True,
+            'pagado_completo': se_completo_pago,
+            'nuevo_monto_pagado': nuevo_monto_pagado,
+            'saldo_restante': max(0, monto_total_a_pagar - nuevo_monto_pagado),
+            'recibo': datos_recibo
+        }
+        
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
         conn.close()
-        raise ValueError("Cuota no encontrada")
+
+def pagar_cuota(cuota_campesino_id: int, sobrecargo: float = 0.0) -> Dict:
+    """
+    Función legacy para compatibilidad, ahora usa registrar_abono internamente
+    para pagar el TOTAL restante de una sola vez.
+    """
+    conn = get_cuotas_connection()
+    cursor = conn.cursor()
     
-    if cuota['pagado']:
-        conn.close()
-        raise ValueError("Esta cuota ya fue pagada")
-    
-    # Obtener folio individual del tipo de cuota
-    folio = cuota['folio_actual']
-    tipo_cuota_id = cuota['tipo_cuota_id']
-    
-    # Calcular monto total (base + sobrecargo)
-    monto_base = cuota['monto']
-    monto_total = monto_base + sobrecargo
-    
-    # Datos del recibo
-    ahora = datetime.now()
-    fecha = ahora.strftime('%Y-%m-%d')
-    hora = ahora.strftime('%H:%M:%S')
-    
-    # Crear recibo (✅ AHORA INCLUYE tipo_cuota_id y sobrecargo)
-    cursor.execute('''
-        INSERT INTO recibos_cuotas 
-        (folio, tipo_cuota_id, fecha, hora, cuota_campesino_id, campesino_id, numero_lote, 
-         nombre_campesino, barrio, nombre_cuota, monto, sobrecargo)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        folio, tipo_cuota_id, fecha, hora, cuota_campesino_id,
-        cuota['campesino_id'], cuota['numero_lote'],
-        cuota['nombre_campesino'], cuota['barrio'],
-        cuota['nombre_cuota'], monto_total, sobrecargo
-    ))
-    
-    recibo_id = cursor.lastrowid
-    
-    # Marcar cuota como pagada
-    cursor.execute('''
-        UPDATE cuotas_campesinos 
-        SET pagado = 1, fecha_pago = ?, recibo_folio = ?
-        WHERE id = ?
-    ''', (fecha, folio, cuota_campesino_id))
-    
-    # Incrementar el folio solo para este tipo de cuota
-    nuevo_folio = folio + 1
-    cursor.execute('''
-        UPDATE tipos_cuota 
-        SET folio_actual = ? 
-        WHERE id = ?
-    ''', (nuevo_folio, tipo_cuota_id))
-    
-    conn.commit()
+    # Obtener saldo pendiente
+    cursor.execute('SELECT monto, monto_pagado FROM cuotas_campesinos WHERE id = ?', (cuota_campesino_id,))
+    row = cursor.fetchone()
     conn.close()
     
-    return {
-        'recibo_id': recibo_id,
-        'folio': folio,
-        'fecha': fecha,
-        'hora': hora,
-        'monto': monto_total,
-        'monto_base': monto_base,
-        'sobrecargo': sobrecargo,
-        'nombre_cuota': cuota['nombre_cuota'],
-        'numero_lote': cuota['numero_lote'],
-        'nombre_campesino': cuota['nombre_campesino'],
-        'barrio': cuota['barrio']
-    }
+    if not row:
+        raise ValueError("Cuota no encontrada")
+        
+    saldo = (row['monto'] + sobrecargo) - row['monto_pagado']
+    
+    # Llamar a registrar_abono con el saldo total
+    resultado = registrar_abono(cuota_campesino_id, saldo)
+    
+    if resultado['pagado_completo'] and resultado['recibo']:
+        # Adaptar respuesta al formato que espera la UI antigua
+        recibo = obtener_recibo_cuota(resultado['recibo']['recibo_id'])
+        return {
+            'recibo_id': recibo['id'],
+            'folio': recibo['folio'],
+            'fecha': recibo['fecha'],
+            'hora': recibo['hora'],
+            'monto': recibo['monto'],
+            'monto_base': recibo['monto'] - recibo['sobrecargo'],
+            'sobrecargo': recibo['sobrecargo'],
+            'nombre_cuota': recibo['nombre_cuota'],
+            'numero_lote': recibo['numero_lote'],
+            'nombre_campesino': recibo['nombre_campesino'],
+            'barrio': recibo['barrio']
+        }
+    else:
+        raise ValueError("Error inesperado al procesar el pago completo")
 
 
 def obtener_recibo_cuota(recibo_id: int) -> Optional[Dict]:
@@ -464,6 +544,31 @@ def obtener_recibos_cuotas_dia(fecha: Optional[str] = None) -> List[Dict]:
         SELECT * FROM recibos_cuotas
         WHERE fecha = ? AND eliminado = 0
         ORDER BY hora DESC
+    ''', (fecha,))
+    
+    resultados = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return resultados
+
+def obtener_abonos_dia(fecha: Optional[str] = None) -> List[Dict]:
+    """
+    Obtiene todos los abonos realizados en un día específico.
+    Incluye información del campesino y la cuota.
+    """
+    if not fecha:
+        fecha = datetime.now().strftime('%Y-%m-%d')
+        
+    conn = get_cuotas_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT ac.*, cc.nombre_campesino, cc.numero_lote, cc.barrio, 
+               tc.nombre as nombre_cuota, cc.recibo_folio, cc.pagado, cc.fecha_pago
+        FROM abonos_cuotas ac
+        JOIN cuotas_campesinos cc ON ac.cuota_campesino_id = cc.id
+        JOIN tipos_cuota tc ON cc.tipo_cuota_id = tc.id
+        WHERE ac.fecha = ?
+        ORDER BY ac.hora DESC
     ''', (fecha,))
     
     resultados = [dict(row) for row in cursor.fetchall()]
@@ -680,6 +785,45 @@ def migrar_sobrecargo_por_tipo():
             print("✓ La columna sobrecargo_habilitado ya existe en tabla tipos_cuota")
     except Exception as e:
         print(f"Error en migración sobrecargo_por_tipo: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
+def migrar_abonos():
+    """Migración: Crea tabla abonos_cuotas y agrega monto_pagado a cuotas_campesinos"""
+    conn = get_cuotas_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # 1. Agregar columna monto_pagado a cuotas_campesinos
+        cursor.execute("PRAGMA table_info(cuotas_campesinos)")
+        columnas = [col[1] for col in cursor.fetchall()]
+        
+        if 'monto_pagado' not in columnas:
+            cursor.execute('ALTER TABLE cuotas_campesinos ADD COLUMN monto_pagado REAL DEFAULT 0.0')
+            print("✓ Columna monto_pagado agregada a cuotas_campesinos")
+            
+            # Inicializar monto_pagado para las cuotas YA pagadas
+            cursor.execute('UPDATE cuotas_campesinos SET monto_pagado = monto WHERE pagado = 1')
+            conn.commit()
+        
+        # 2. Crear tabla abonos_cuotas
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS abonos_cuotas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cuota_campesino_id INTEGER NOT NULL,
+                monto REAL NOT NULL,
+                fecha TEXT NOT NULL,
+                hora TEXT NOT NULL,
+                FOREIGN KEY (cuota_campesino_id) REFERENCES cuotas_campesinos(id)
+            )
+        ''')
+        print("✓ Tabla abonos_cuotas verificada/creada")
+        
+        conn.commit()
+        
+    except Exception as e:
+        print(f"Error en migración abonos: {e}")
         conn.rollback()
     finally:
         conn.close()

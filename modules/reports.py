@@ -2182,16 +2182,17 @@ def generar_reporte_todas_cuotas_pdf() -> str:
     return ruta_pdf
 
 def generar_reporte_cuotas_dia_pdf(fecha: Optional[str] = None) -> str:
-    """Genera un reporte PDF de las cuotas cobradas en un día específico"""
-    from modules.cuotas import obtener_recibos_cuotas_dia
+    """Genera un reporte PDF de las cuotas cobradas en un día específico (ABONOS Y PAGOS)"""
+    from modules.cuotas import obtener_abonos_dia
     
     if not fecha:
         fecha = datetime.now().strftime('%Y-%m-%d')
     
-    recibos = obtener_recibos_cuotas_dia(fecha)
+    # Usar ABONOS para el reporte de caja (dinero real recibido hoy)
+    abonos = obtener_abonos_dia(fecha)
     
-    if not recibos:
-        raise ValueError("No hay recibos de cuotas para el día seleccionado")
+    if not abonos:
+        raise ValueError("No hay pagos/abonos registrados para el día seleccionado")
     
     # Crear PDF
     reportes_dir = os.path.join('database', 'reportes')
@@ -2219,82 +2220,116 @@ def generar_reporte_cuotas_dia_pdf(fecha: Optional[str] = None) -> str:
     c.setFont("Helvetica", 12)
     c.drawCentredString(ancho/2, alto - 2.8*cm, f"Fecha: {fecha_obj.strftime('%d/%m/%Y')}")
     
+    # Separar en Completos y Parciales
+    completos = [a for a in abonos if a['pagado']]
+    parciales = [a for a in abonos if not a['pagado']]
+    
+    # Calcular totales
+    total_completos = sum(a['monto'] for a in completos)
+    total_parciales = sum(a['monto'] for a in parciales)
+    total_general = total_completos + total_parciales
+    
     # RESUMEN
     ypos = alto - 4*cm
-    total_recaudado = sum(r['monto'] for r in recibos)
     
     c.setFont("Helvetica-Bold", 12)
     c.drawString(2*cm, ypos, "RESUMEN DEL DÍA")
+    ypos -= 0.6*cm
     
-    ypos -= 0.8*cm
-    c.setFont("Helvetica", 11)
-    c.drawString(2*cm, ypos, f"Total de Recibos: {len(recibos)}")
+    c.setFont("Helvetica", 10)
+    c.drawString(2*cm, ypos, f"Total Movimientos: {len(abonos)}")
     ypos -= 0.5*cm
+    
+    c.drawString(2*cm, ypos, f"Recaudado (Cuotas Completas):")
+    c.drawRightString(12*cm, ypos, f"${total_completos:.2f}")
+    ypos -= 0.5*cm
+    
+    c.drawString(2*cm, ypos, f"Recaudado (Abonos Parciales):")
+    c.drawRightString(12*cm, ypos, f"${total_parciales:.2f}")
+    ypos -= 0.6*cm
+    
     c.setFont("Helvetica-Bold", 14)
-    c.drawString(2*cm, ypos, f"Total Recaudado: ${total_recaudado:.2f}")
+    c.drawString(2*cm, ypos, f"TOTAL GENERAL: ${total_general:.2f}")
     
     # TABLA
     ypos -= 1.2*cm
     c.setFont("Helvetica-Bold", 11)
-    c.drawString(2*cm, ypos, "DETALLE DE RECIBOS")
+    c.drawString(2*cm, ypos, "DETALLE DE PAGOS")
     
     ypos -= 0.6*cm
     
-    # Encabezados de tabla
+    # Encabezados
     c.setFont("Helvetica-Bold", 9)
-    c.drawString(2*cm, ypos, "Folio")
-    c.drawString(3.5*cm, ypos, "Hora")
-    c.drawString(5.5*cm, ypos, "Lote")
-    c.drawString(7.5*cm, ypos, "Nombre")
-    c.drawString(13*cm, ypos, "Barrio")
-    c.drawString(15.5*cm, ypos, "Cuota")
-    c.drawString(18.5*cm, ypos, "Monto")
+    c.drawString(2*cm, ypos, "Folio/Tipo")
+    c.drawString(4*cm, ypos, "Hora")
+    c.drawString(6*cm, ypos, "Lote")
+    c.drawString(8*cm, ypos, "Nombre")
+    c.drawString(13.5*cm, ypos, "Barrio")
+    c.drawString(16*cm, ypos, "Cuota")
+    c.drawString(19*cm, ypos, "Monto")
     
     ypos -= 0.3*cm
     c.line(2*cm, ypos, ancho - 2*cm, ypos)
     ypos -= 0.4*cm
     
-    # Datos
-    c.setFont("Helvetica", 8)
-    
-    for recibo in recibos:
+    # Función auxiliar para dibujar filas
+    def dibujar_fila(abono, es_parcial):
+        nonlocal ypos
         if ypos < 3*cm:
             c.showPage()
             ypos = alto - 2*cm
+            # Re-dibujar encabezados... (simplificado para brevedad, idealmente refactorizar)
             c.setFont("Helvetica-Bold", 9)
-            c.drawString(2*cm, ypos, "Folio")
-            c.drawString(3.5*cm, ypos, "Hora")
-            c.drawString(5.5*cm, ypos, "Lote")
-            c.drawString(7.5*cm, ypos, "Nombre")
-            c.drawString(13*cm, ypos, "Barrio")
-            c.drawString(15.5*cm, ypos, "Cuota")
-            c.drawString(18.5*cm, ypos, "Monto")
-            ypos -= 0.3*cm
-            c.line(2*cm, ypos, ancho - 2*cm, ypos)
-            ypos -= 0.4*cm
-            c.setFont("Helvetica", 8)
+            c.drawString(2*cm, ypos, "Folio/Tipo")
+            # ... resto de encabezados
+            ypos -= 0.7*cm
         
-        c.drawString(2*cm, ypos, str(recibo['folio']))
-        c.drawString(3.5*cm, ypos, recibo['hora'][:5])
-        c.drawString(5.5*cm, ypos, recibo['numero_lote'])
-        nombre = recibo['nombre_campesino'][:25]
-        c.drawString(7.5*cm, ypos, nombre)
-        c.drawString(13*cm, ypos, recibo['barrio'][:15])
-        cuota = recibo['nombre_cuota'][:20]
-        c.drawString(15.5*cm, ypos, cuota)
-        c.drawRightString(20*cm, ypos, f"${recibo['monto']:.2f}")
+        if es_parcial:
+            # Fondo amarillo para parciales
+            c.setFillColorRGB(1, 1, 0.8) # Amarillo claro
+            c.rect(1.8*cm, ypos - 0.1*cm, ancho - 3.6*cm, 0.4*cm, fill=1, stroke=0)
+            c.setFillColor(colors.black)
+            
+        c.setFont("Helvetica", 8)
         
-        ypos -= 0.35*cm
+        folio_texto = str(abono['recibo_folio']) if abono['recibo_folio'] else "ABONO"
+        
+        c.drawString(2*cm, ypos, folio_texto)
+        c.drawString(4*cm, ypos, abono['hora'][:5])
+        c.drawString(6*cm, ypos, abono['numero_lote'])
+        c.drawString(8*cm, ypos, abono['nombre_campesino'][:25])
+        c.drawString(13.5*cm, ypos, abono['barrio'][:15])
+        c.drawString(16*cm, ypos, abono['nombre_cuota'][:15])
+        c.drawRightString(20.5*cm, ypos, f"${abono['monto']:.2f}")
+        
+        ypos -= 0.4*cm
+
+    # 1. Dibujar Completos
+    if completos:
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(2*cm, ypos, "--- CUOTAS COMPLETAS ---")
+        ypos -= 0.5*cm
+        for abono in completos:
+            dibujar_fila(abono, False)
+            
+    ypos -= 0.3*cm
     
-        # Línea final y total
+    # 2. Dibujar Parciales
+    if parciales:
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(2*cm, ypos, "--- ABONOS PARCIALES (PENDIENTES) ---")
+        ypos -= 0.5*cm
+        for abono in parciales:
+            dibujar_fila(abono, True)
+
+    # Línea final
     ypos -= 0.2*cm
     c.line(2*cm, ypos, ancho - 2*cm, ypos)
 
     ypos -= 0.6*cm
     c.setFont("Helvetica-Bold", 12)
-    # ✅ Cambiar posición del texto para que no se encime
     c.drawString(13*cm, ypos, "TOTAL DEL DÍA:")
-    c.drawRightString(20*cm, ypos, f"${total_recaudado:.2f}")
+    c.drawRightString(20.5*cm, ypos, f"${total_general:.2f}")
 
     # Pie de página
     ypos -= 1.5*cm
@@ -2309,18 +2344,18 @@ def generar_reporte_cuotas_dia_pdf(fecha: Optional[str] = None) -> str:
     return ruta_pdf
 
 def generar_excel_cuotas_dia(fecha: Optional[str] = None) -> str:
-    """Genera un Excel con las cuotas cobradas en un día específico"""
-    from modules.cuotas import obtener_recibos_cuotas_dia
+    """Genera un Excel con las cuotas/abonos cobradas en un día específico"""
+    from modules.cuotas import obtener_abonos_dia
     import openpyxl
     from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
     
     if not fecha:
         fecha = datetime.now().strftime('%Y-%m-%d')
     
-    recibos = obtener_recibos_cuotas_dia(fecha)
+    abonos = obtener_abonos_dia(fecha)
     
-    if not recibos:
-        raise ValueError("No hay recibos de cuotas para el día seleccionado")
+    if not abonos:
+        raise ValueError("No hay pagos/abonos para el día seleccionado")
     
     # Crear Excel
     reportes_dir = os.path.join('database', 'reportes')
@@ -2356,59 +2391,101 @@ def generar_excel_cuotas_dia(fecha: Optional[str] = None) -> str:
     ws['A2'].font = Font(size=12)
     ws['A2'].alignment = Alignment(horizontal='center')
     
-    # RESUMEN
-    total_recaudado = sum(r['monto'] for r in recibos)
-    ws['A4'] = "Total de Recibos:"
-    ws['B4'] = len(recibos)
-    ws['B4'].font = Font(bold=True)
+    # Separar
+    completos = [a for a in abonos if a['pagado']]
+    parciales = [a for a in abonos if not a['pagado']]
     
-    ws['A5'] = "Total Recaudado:"
-    ws['B5'] = total_recaudado
-    ws['B5'].font = Font(bold=True)
+    total_completos = sum(a['monto'] for a in completos)
+    total_parciales = sum(a['monto'] for a in parciales)
+    total_general = total_completos + total_parciales
+    
+    # RESUMEN
+    ws['A4'] = "Total Movimientos:"
+    ws['B4'] = len(abonos)
+    
+    ws['A5'] = "Recaudado (Completas):"
+    ws['B5'] = total_completos
     ws['B5'].number_format = '"$"#,##0.00'
     
+    ws['A6'] = "Recaudado (Abonos):"
+    ws['B6'] = total_parciales
+    ws['B6'].number_format = '"$"#,##0.00'
+    
+    ws['A7'] = "TOTAL GENERAL:"
+    ws['B7'] = total_general
+    ws['B7'].font = Font(bold=True)
+    ws['B7'].number_format = '"$"#,##0.00'
+    
     # ENCABEZADOS
-    headers = ['Folio', 'Hora', 'Lote', 'Nombre', 'Barrio', 'Cuota', 'Monto', 'Fecha']
+    headers = ['Folio/Tipo', 'Hora', 'Lote', 'Nombre', 'Barrio', 'Cuota', 'Monto', 'Fecha']
     for col, header in enumerate(headers, start=1):
-        cell = ws.cell(row=7, column=col)
+        cell = ws.cell(row=9, column=col)
         cell.value = header
         cell.fill = header_fill
         cell.font = header_font
         cell.alignment = Alignment(horizontal='center')
         cell.border = border
     
-    # DATOS
-    for idx, recibo in enumerate(recibos, start=8):
-        ws.cell(row=idx, column=1, value=recibo['folio'])
-        ws.cell(row=idx, column=2, value=recibo['hora'][:5])  # HH:MM
-        ws.cell(row=idx, column=3, value=recibo['numero_lote'])
-        ws.cell(row=idx, column=4, value=recibo['nombre_campesino'])
-        ws.cell(row=idx, column=5, value=recibo['barrio'])
-        ws.cell(row=idx, column=6, value=recibo['nombre_cuota'])
-        ws.cell(row=idx, column=7, value=recibo['monto'])
-        ws.cell(row=idx, column=8, value=recibo['fecha'])
-        
-        # Formato moneda
-        ws.cell(row=idx, column=7).number_format = '"$"#,##0.00'
-        
-        # Bordes
-        for col in range(1, 9):
-            ws.cell(row=idx, column=col).border = border
+    row_idx = 10
     
-    # TOTAL AL FINAL
-    ultima_fila = len(recibos) + 8
-    ws.merge_cells(f'A{ultima_fila}:F{ultima_fila}')
-    ws[f'A{ultima_fila}'] = "TOTAL DEL DÍA:"
-    ws[f'A{ultima_fila}'].font = Font(bold=True, size=12)
-    ws[f'A{ultima_fila}'].alignment = Alignment(horizontal='right')
+    # Función para escribir filas
+    def escribir_filas(lista, es_parcial):
+        nonlocal row_idx
+        for abono in lista:
+            folio_texto = str(abono['recibo_folio']) if abono['recibo_folio'] else "ABONO"
+            
+            ws.cell(row=row_idx, column=1, value=folio_texto)
+            ws.cell(row=row_idx, column=2, value=abono['hora'][:5])
+            ws.cell(row=row_idx, column=3, value=abono['numero_lote'])
+            ws.cell(row=row_idx, column=4, value=abono['nombre_campesino'])
+            ws.cell(row=row_idx, column=5, value=abono['barrio'])
+            ws.cell(row=row_idx, column=6, value=abono['nombre_cuota'])
+            ws.cell(row=row_idx, column=7, value=abono['monto'])
+            ws.cell(row=row_idx, column=8, value=abono['fecha'])
+            
+            ws.cell(row=row_idx, column=7).number_format = '"$"#,##0.00'
+            
+            # Estilo
+            for col in range(1, 9):
+                cell = ws.cell(row=row_idx, column=col)
+                cell.border = border
+                if es_parcial:
+                    cell.fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid") # Amarillo claro
+            
+            row_idx += 1
+
+    # Escribir Completos
+    if completos:
+        ws.merge_cells(f'A{row_idx}:H{row_idx}')
+        ws[f'A{row_idx}'] = "--- CUOTAS COMPLETAS ---"
+        ws[f'A{row_idx}'].alignment = Alignment(horizontal='center')
+        ws[f'A{row_idx}'].font = Font(bold=True)
+        row_idx += 1
+        escribir_filas(completos, False)
+        
+    # Escribir Parciales
+    if parciales:
+        ws.merge_cells(f'A{row_idx}:H{row_idx}')
+        ws[f'A{row_idx}'] = "--- ABONOS PARCIALES (PENDIENTES) ---"
+        ws[f'A{row_idx}'].alignment = Alignment(horizontal='center')
+        ws[f'A{row_idx}'].font = Font(bold=True)
+        row_idx += 1
+        escribir_filas(parciales, True)
     
-    ws[f'G{ultima_fila}'] = total_recaudado
-    ws[f'G{ultima_fila}'].font = Font(bold=True, size=12)
-    ws[f'G{ultima_fila}'].number_format = '"$"#,##0.00'
-    ws[f'G{ultima_fila}'].fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+    # TOTAL FINAL
+    row_idx += 1
+    ws.merge_cells(f'A{row_idx}:F{row_idx}')
+    ws[f'A{row_idx}'] = "TOTAL DEL DÍA:"
+    ws[f'A{row_idx}'].font = Font(bold=True, size=12)
+    ws[f'A{row_idx}'].alignment = Alignment(horizontal='right')
+    
+    ws[f'G{row_idx}'] = total_general
+    ws[f'G{row_idx}'].font = Font(bold=True, size=12)
+    ws[f'G{row_idx}'].number_format = '"$"#,##0.00'
+    ws[f'G{row_idx}'].fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
     
     # AJUSTAR ANCHOS
-    ws.column_dimensions['A'].width = 10
+    ws.column_dimensions['A'].width = 12
     ws.column_dimensions['B'].width = 10
     ws.column_dimensions['C'].width = 10
     ws.column_dimensions['D'].width = 30

@@ -1760,14 +1760,25 @@ class VentanaHistorial:
                 estado = "✅ PAGADO" if cuota['pagado'] else "⏳ PENDIENTE"
                 fecha_pago = cuota['fecha_pago'] if cuota['fecha_pago'] else "-"
                 
-                # Usar monto pagado si existe (incluye sobrecargo), sino monto base
-                monto_mostrar = cuota.get('monto_pagado') if cuota.get('monto_pagado') else cuota['monto']
+                # Calcular totales y pendientes
+                monto_total = cuota['monto']
+                monto_pagado = cuota.get('monto_pagado', 0.0)
+                
+                # Si tiene sobrecargo habilitado, calcularlo para mostrarlo
+                sobrecargo_estimado = 0.0
+                # Necesitamos saber si tiene sobrecargo habilitado, pero la query original no lo trae
+                # Por simplicidad, si no está pagado, asumimos que podría tenerlo.
+                # Mejor: mostrar lo que hay en BD.
+                
+                estado_texto = estado
+                if not cuota['pagado'] and monto_pagado > 0:
+                    estado_texto = "⚠️ PARCIAL"
                 
                 self.tree_cuotas.insert('', tk.END,
                                 values=(
                                     cuota['nombre_tipo_cuota'],
-                                    f"${monto_mostrar:.2f}",
-                                    estado,
+                                    f"${monto_total:.2f} (Abonado: ${monto_pagado:.2f})",
+                                    estado_texto,
                                     fecha_pago
                                 ),
                                 tags=(str(cuota['id']), str(cuota['pagado'])))
@@ -1785,51 +1796,11 @@ class VentanaHistorial:
         pagado = int(item['tags'][1])
         
         if pagado:
-            messagebox.showinfo("Información", "Esta cuota ya fue pagada")
+            messagebox.showinfo("Información", "Esta cuota ya fue pagada totalmente")
             return
         
-        if messagebox.askyesno("Confirmar Pago", "¿Marcar esta cuota como PAGADA y generar recibo?"):
-            try:
-                from modules.cuotas import pagar_cuota, get_cuotas_connection, calcular_sobrecargo_acumulado
-                from modules.reports import generar_recibo_cuota_pdf_temporal, abrir_pdf, imprimir_recibo_y_limpiar
-                
-                # Obtener sobrecargo desde la base de datos
-                conn = get_cuotas_connection()
-                cursor = conn.cursor()
-                
-                cursor.execute('''
-                    SELECT cc.fecha_asignacion, tc.sobrecargo_habilitado
-                    FROM cuotas_campesinos cc
-                    JOIN tipos_cuota tc ON cc.tipo_cuota_id = tc.id
-                    WHERE cc.id = ?
-                ''', (cuota_id,))
-                
-                row = cursor.fetchone()
-                sobrecargo = 0.0
-                
-                if row and row['sobrecargo_habilitado']:
-                    sobrecargo = calcular_sobrecargo_acumulado(row['fecha_asignacion'])
-                
-                resultado = pagar_cuota(cuota_id, sobrecargo=sobrecargo)
-                
-                # Generar PDF
-                pdf_path = generar_recibo_cuota_pdf_temporal(resultado['recibo_id'])
-                abrir_pdf(pdf_path)
-                
-                if messagebox.askyesno("Imprimir", "¿Desea imprimir el recibo?"):
-                    imprimir_recibo_y_limpiar(pdf_path)
-                else:
-                    try:
-                        os.remove(pdf_path)
-                    except:
-                        pass
-                
-                messagebox.showinfo("Éxito", "Cuota pagada correctamente")
-                # Recargar
-                self.cargar_historial()
-                
-            except Exception as e:
-                messagebox.showerror("Error", f"Error al pagar cuota:\n{str(e)}")
+        # Abrir ventana de pago parcial
+        VentanaPagoCuota(self.ventana, cuota_id, self)
     
     def reimprimir_recibo(self):
         """Reimprime el recibo seleccionado - RECIBOS TEMPORALES"""
@@ -2560,20 +2531,11 @@ class VentanaPartirLote:
             if not messagebox.askyesno("Confirmar Partición", mensaje):
                 return
             
-            # Partir lote
-            from modules.models import partir_lote, renombrar_campesino
-            nuevos_ids = partir_lote(self.campesino_id, num_divisiones, superficies)
+            # Ejecutar partición
+            from modules.models import partir_lote
+            partir_lote(self.campesino_id, num_divisiones, superficies, nombres)
             
-            # Actualizar nombres
-            renombrar_campesino(self.campesino_id, nombres[0])
-            for i, nuevo_id in enumerate(nuevos_ids):
-                renombrar_campesino(nuevo_id, nombres[i+1])
-            
-            messagebox.showinfo("Éxito",
-                              f"Lote partido exitosamente\n"
-                              f"Se crearon {num_divisiones} nuevos sublotes")
-            
-            # Actualizar UI
+            messagebox.showinfo("Éxito", "Lote partido correctamente")
             self.ventana_principal.cargar_todos_campesinos()
             self.ventana.destroy()
             
@@ -2581,6 +2543,150 @@ class VentanaPartirLote:
             messagebox.showerror("Error de Validación", str(e))
         except Exception as e:
             messagebox.showerror("Error", f"Error al partir lote:\n{str(e)}")
+
+class VentanaPagoCuota:
+    """Ventana para registrar pagos (abonos) a cuotas"""
+    
+    def __init__(self, parent, cuota_id, ventana_padre):
+        self.cuota_id = cuota_id
+        self.ventana_padre = ventana_padre
+        
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title("💰 Registrar Pago de Cuota")
+        self.ventana.geometry("450x450")
+        self.ventana.transient(parent)
+        self.ventana.grab_set()
+        
+        self.cargar_datos_cuota()
+        self.crear_widgets()
+        
+    def cargar_datos_cuota(self):
+        try:
+            from modules.cuotas import get_cuotas_connection, calcular_sobrecargo_acumulado
+            conn = get_cuotas_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT cc.*, tc.nombre as nombre_cuota, tc.sobrecargo_habilitado
+                FROM cuotas_campesinos cc
+                JOIN tipos_cuota tc ON cc.tipo_cuota_id = tc.id
+                WHERE cc.id = ?
+            ''', (self.cuota_id,))
+            
+            row = cursor.fetchone()
+            conn.close()
+            
+            if not row:
+                raise ValueError("Cuota no encontrada")
+                
+            self.cuota = dict(row)
+            
+            # Calcular sobrecargo
+            self.sobrecargo = 0.0
+            if self.cuota['sobrecargo_habilitado']:
+                self.sobrecargo = calcular_sobrecargo_acumulado(self.cuota['fecha_asignacion'])
+                
+            self.monto_base = self.cuota['monto']
+            self.monto_total = self.monto_base + self.sobrecargo
+            self.monto_pagado = self.cuota.get('monto_pagado', 0.0)
+            self.saldo_pendiente = self.monto_total - self.monto_pagado
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al cargar datos: {e}")
+            self.ventana.destroy()
+
+    def crear_widgets(self):
+        frame = ttk.Frame(self.ventana, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Título
+        ttk.Label(frame, text="REGISTRAR PAGO / ABONO", 
+                 font=('Helvetica', 14, 'bold')).pack(pady=10)
+        
+        # Info Cuota
+        info_frame = ttk.LabelFrame(frame, text="Detalles de la Cuota", padding="10")
+        info_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(info_frame, text=f"Concepto: {self.cuota['nombre_cuota']}", font=('Helvetica', 10, 'bold')).pack(anchor=tk.W)
+        ttk.Label(info_frame, text=f"Monto Base: ${self.monto_base:.2f}").pack(anchor=tk.W)
+        
+        if self.sobrecargo > 0:
+            ttk.Label(info_frame, text=f"Sobrecargo: ${self.sobrecargo:.2f}", foreground='red').pack(anchor=tk.W)
+            
+        ttk.Label(info_frame, text=f"TOTAL A PAGAR: ${self.monto_total:.2f}", font=('Helvetica', 10, 'bold')).pack(anchor=tk.W, pady=5)
+        
+        # Estado de Pagos
+        pago_frame = ttk.LabelFrame(frame, text="Estado de Pagos", padding="10")
+        pago_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(pago_frame, text=f"Abonado hasta hoy: ${self.monto_pagado:.2f}", foreground='green').pack(anchor=tk.W)
+        ttk.Label(pago_frame, text=f"SALDO PENDIENTE: ${self.saldo_pendiente:.2f}", 
+                 font=('Helvetica', 12, 'bold'), foreground='blue').pack(anchor=tk.W, pady=5)
+        
+        # Entrada de Abono
+        input_frame = ttk.Frame(frame, padding="10")
+        input_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(input_frame, text="Monto a abonar:").pack(side=tk.LEFT)
+        self.entry_abono = ttk.Entry(input_frame, width=15, font=('Helvetica', 12))
+        self.entry_abono.pack(side=tk.LEFT, padx=10)
+        self.entry_abono.insert(0, f"{self.saldo_pendiente:.2f}")
+        self.entry_abono.select_range(0, tk.END)
+        self.entry_abono.focus()
+        
+        # Botones
+        btn_frame = ttk.Frame(frame, padding="10")
+        btn_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Button(btn_frame, text="✅ Registrar Pago", command=self.registrar_pago).pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        ttk.Button(btn_frame, text="❌ Cancelar", command=self.ventana.destroy).pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        
+    def registrar_pago(self):
+        try:
+            monto = float(self.entry_abono.get())
+            if monto <= 0:
+                messagebox.showwarning("Error", "El monto debe ser mayor a 0")
+                return
+                
+            if monto > self.saldo_pendiente + 0.01:
+                messagebox.showwarning("Error", f"El monto excede el saldo pendiente (${self.saldo_pendiente:.2f})")
+                return
+                
+            if messagebox.askyesno("Confirmar", f"¿Registrar abono de ${monto:.2f}?"):
+                from modules.cuotas import registrar_abono
+                from modules.reports import generar_recibo_cuota_pdf_temporal, abrir_pdf, imprimir_recibo_y_limpiar
+                import os # Import os for file operations
+                
+                resultado = registrar_abono(self.cuota_id, monto)
+                
+                if resultado['pagado_completo']:
+                    messagebox.showinfo("¡Pago Completado!", 
+                                      "Se ha cubierto el total de la cuota.\nGenerando recibo...")
+                    
+                    if resultado['recibo']:
+                        pdf_path = generar_recibo_cuota_pdf_temporal(resultado['recibo']['recibo_id'])
+                        abrir_pdf(pdf_path)
+                        
+                        if messagebox.askyesno("Imprimir", "¿Desea imprimir el recibo?"):
+                            imprimir_recibo_y_limpiar(pdf_path)
+                        else:
+                            try:
+                                os.remove(pdf_path)
+                            except:
+                                pass
+                else:
+                    saldo = resultado['saldo_restante']
+                    messagebox.showinfo("Abono Registrado", 
+                                      f"Abono registrado correctamente.\nSaldo restante: ${saldo:.2f}\n\n"
+                                      "Recuerde: El recibo se generará al cubrir el total.")
+                
+                self.ventana_padre.cargar_historial()
+                self.ventana.destroy()
+                
+        except ValueError:
+            messagebox.showerror("Error", "Ingrese un monto válido")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al registrar pago: {e}")
 
 
 class VentanaEditarLote:
