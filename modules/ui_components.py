@@ -195,12 +195,28 @@ class VentanaPrincipal:
         self.root = root
         self.root.title("Sistema de Control de Riegos - XICUCO")
         
-        # Configurar tamaño - Más grande para acomodar sidebar
-        ancho = 1400
-        alto = 850
-        x = (self.root.winfo_screenwidth() // 2) - (ancho // 2)
-        y = (self.root.winfo_screenheight() // 2) - (alto // 2)
+        # Configurar tamaño - Responsive
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        
+        # Usar 90% del ancho y 85% del alto por defecto
+        ancho = int(screen_width * 0.9)
+        alto = int(screen_height * 0.85)
+        
+        x = (screen_width // 2) - (ancho // 2)
+        y = (screen_height // 2) - (alto // 2)
+        
         self.root.geometry(f'{ancho}x{alto}+{x}+{y}')
+        self.root.minsize(1024, 700) # Tamaño mínimo para asegurar usabilidad
+        
+        # Intentar maximizar
+        try:
+            self.root.state('zoomed') # Windows
+        except:
+            try:
+                self.root.attributes('-zoomed', True) # Linux
+            except:
+                pass # Mac usa comportamiento por defecto
         
         # Hacer resizable
         self.root.resizable(True, True)
@@ -304,18 +320,21 @@ class VentanaPrincipal:
                 bg='#ffffff',
                 fg='#2c3e50').pack(anchor='w', pady=(0, 10))
         
-        # Barra de búsqueda
+        # Barra de búsqueda - GRID LAYOUT
         search_bar = tk.Frame(search_inner, bg='#ffffff')
         search_bar.pack(fill=tk.X)
+        search_bar.columnconfigure(0, weight=1) # Entry expande
+        search_bar.columnconfigure(1, weight=0) # Botones fijos
+        search_bar.columnconfigure(2, weight=0)
+        search_bar.columnconfigure(3, weight=0)
         
-        
-        self.entry_busqueda = tk.Entry(search_bar, width=35,
+        self.entry_busqueda = tk.Entry(search_bar, width=30,
                                       font=('Segoe UI', 11),
                                       relief=tk.FLAT,
                                       bg='#ecf0f1',
                                       fg='#2c3e50',
                                       insertbackground='#2c3e50')
-        self.entry_busqueda.pack(side=tk.LEFT, padx=5, ipady=8, ipadx=10)
+        self.entry_busqueda.grid(row=0, column=0, sticky='ew', padx=(0, 10), ipady=8)
         self.entry_busqueda.bind('<Return>', self.on_buscar)
         
         # Botones de búsqueda
@@ -328,7 +347,7 @@ class VentanaPrincipal:
                               cursor='hand2',
                               padx=20,
                               pady=8)
-        btn_buscar.pack(side=tk.LEFT, padx=5)
+        btn_buscar.grid(row=0, column=1, padx=5)
         add_button_hover(btn_buscar, '#3498db', '#2980b9')
         
         btn_limpiar = tk.Button(search_bar, text="Limpiar",
@@ -340,7 +359,7 @@ class VentanaPrincipal:
                                cursor='hand2',
                                padx=20,
                                pady=8)
-        btn_limpiar.pack(side=tk.LEFT, padx=5)
+        btn_limpiar.grid(row=0, column=2, padx=5)
         add_button_hover(btn_limpiar, '#95a5a6', '#7f8c8d')
         
         btn_nuevo = tk.Button(search_bar, text="➕ Nuevo Campesino",
@@ -352,7 +371,7 @@ class VentanaPrincipal:
                              cursor='hand2',
                              padx=20,
                              pady=8)
-        btn_nuevo.pack(side=tk.LEFT, padx=15)
+        btn_nuevo.grid(row=0, column=3, padx=(10, 0))
         add_button_hover(btn_nuevo, '#27ae60', '#229954')
         
         # ===== TABLA DE CAMPESINOS =====
@@ -414,14 +433,14 @@ class VentanaPrincipal:
         self.tree.heading('cultivo', text='Cultivo Actual')
         self.tree.heading('riegos', text='Riegos')
         
-        # Anchos de columna
-        self.tree.column('lote', width=70)
-        self.tree.column('nombre', width=200)
-        self.tree.column('localidad', width=120)
-        self.tree.column('barrio', width=80)
-        self.tree.column('superficie', width=80)
-        self.tree.column('cultivo', width=120)
-        self.tree.column('riegos', width=70)
+        # Anchos de columna - RESPONSIVE (minwidth asegura legibilidad)
+        self.tree.column('lote', width=80, minwidth=60, anchor='center')
+        self.tree.column('nombre', width=250, minwidth=150)
+        self.tree.column('localidad', width=150, minwidth=100)
+        self.tree.column('barrio', width=100, minwidth=80)
+        self.tree.column('superficie', width=100, minwidth=80, anchor='center')
+        self.tree.column('cultivo', width=150, minwidth=100)
+        self.tree.column('riegos', width=80, minwidth=60, anchor='center')
         
         # Scrollbar
         scrollbar_tree = ttk.Scrollbar(tree_container, orient=tk.VERTICAL, command=self.tree.yview)
@@ -446,7 +465,11 @@ class VentanaPrincipal:
                 fg='#2c3e50').pack(anchor='w', pady=(0, 10))
         
         botones_frame = tk.Frame(acciones_inner, bg='#ffffff')
-        botones_frame.pack()
+        botones_frame.pack(fill=tk.X)
+        
+        # Configurar grid para que los botones se distribuyan equitativamente
+        for i in range(4):
+            botones_frame.columnconfigure(i, weight=1, uniform="buttons")
         
         # Lista para almacenar referencias de PhotoImage
         self.action_button_icons = []
@@ -459,7 +482,7 @@ class VentanaPrincipal:
             ("Cerrar Día", self.cerrar_dia_dialog, '#c0392b', '#a93226', 'cerrar dia.svg')
         ]
         
-        for text, command, bg_color, hover_color, svg_file in action_buttons_data:
+        for i, (text, command, bg_color, hover_color, svg_file) in enumerate(action_buttons_data):
             # Cargar icono
             icon = load_svg_icon(svg_file, size=28)
             
@@ -469,7 +492,7 @@ class VentanaPrincipal:
                 
                 # Frame para el botón completo
                 btn_container = tk.Frame(botones_frame, bg=bg_color, cursor='hand2')
-                btn_container.pack(side=tk.LEFT, padx=5)
+                btn_container.grid(row=0, column=i, padx=5, sticky='ew')
                 
                 # Frame interno para centrar contenido
                 inner_frame = tk.Frame(btn_container, bg=bg_color)
