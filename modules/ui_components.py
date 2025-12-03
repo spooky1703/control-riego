@@ -32,8 +32,8 @@ from modules.logic import (
 )
 
 from modules.reports import (
-    generar_recibo_pdf_temporal, imprimir_recibo_y_limpiar,
-    generar_reporte_diario, abrir_pdf, exportar_a_excel, obtener_impresoras_disponibles,
+    generar_recibo_pdf, abrir_pdf,
+    generar_reporte_diario, exportar_a_excel, obtener_impresoras_disponibles,
     generar_corte_caja_excel  
 )
 from modules.cuotas import (
@@ -43,8 +43,59 @@ from modules.cuotas import (
     obtener_recibo_cuota, obtener_recibos_cuotas_dia, obtener_estadisticas_generales_cuotas
 )
 
+from modules.modern_sidebar import ModernSidebar
+from modules.utils import resource_path
+
 # Lista de cultivos comunes
 CULTIVOS = ['MAÍZ', 'FRIJOL', 'FRIJOL EJOTERO','TRIGO', 'SORGO', 'ALFALFA', 'CHILE', 'TOMATE', 'CEBOLLA', 'AJO', 'NABO' ,'AVENA','HABA','CALABAZA','CEBADA','ARBOL FRUTAL','PASTO','BROCOLI','COLIFLOR']
+
+# ==================== FUNCIONES HELPER ====================
+
+def add_button_hover(button, normal_color, hover_color):
+    """
+    Agrega efectos hover a un botón.
+    
+    Args:
+        button: Widget Button
+        normal_color: Color normal del botón
+        hover_color: Color cuando el mouse está encima
+    """
+    button.bind('<Enter>', lambda e: button.configure(bg=hover_color))
+    button.bind('<Leave>', lambda e: button.configure(bg=normal_color))
+
+def load_svg_icon(svg_filename, size=32):
+    """
+    Carga un icono PNG (cambió de SVG a PNG por problemas con cairo).
+    
+    Args:
+        svg_filename: Nombre del archivo PNG en la carpeta assets (ej: 'cuota.svg' -> 'cuota.png')
+        size: Tamaño del icono en píxeles
+        
+    Returns:
+        PhotoImage o None si no se pudo cargar
+    """
+    from PIL import Image, ImageTk
+    
+    # Convertir nombre de SVG a PNG
+    png_filename = svg_filename.replace('.svg', '.png')
+    png_filename = svg_filename.replace('.svg', '.png')
+    png_path = resource_path(os.path.join('assets', png_filename))
+    
+    if not os.path.exists(png_path):
+        return None
+        
+    try:
+        # Cargar imagen PNG y redimensionar
+        img = Image.open(png_path)
+        img = img.resize((size, size), Image.Resampling.LANCZOS)
+        photo = ImageTk.PhotoImage(img)
+        
+        return photo
+        
+    except Exception as e:
+        print(f"Error loading PNG {png_filename}: {e}")
+        return None
+
 
 # ==================== VENTANA PRINCIPAL ====================
 
@@ -135,22 +186,27 @@ def crear_ventana_scrollable(parent_ventana, contenido_frame):
     return canvas, scrollable_frame
 
 
+
+
 class VentanaPrincipal:
-    """Ventana principal del sistema"""
+    """Ventana principal del sistema con diseño moderno de sidebar"""
     
     def __init__(self, root):
         self.root = root
         self.root.title("Sistema de Control de Riegos - XICUCO")
         
-        # Configurar tamaño - Adaptable a diferentes resoluciones
-        ancho = 1200
-        alto = 590
+        # Configurar tamaño - Más grande para acomodar sidebar
+        ancho = 1400
+        alto = 850
         x = (self.root.winfo_screenwidth() // 2) - (ancho // 2)
         y = (self.root.winfo_screenheight() // 2) - (alto // 2)
         self.root.geometry(f'{ancho}x{alto}+{x}+{y}')
         
         # Hacer resizable
         self.root.resizable(True, True)
+        
+        # Color de fondo moderno
+        self.root.configure(bg='#ecf0f1')
         
         # Variables
         self.total_dia = tk.DoubleVar(value=0.0)
@@ -164,74 +220,190 @@ class VentanaPrincipal:
         self.actualizar_total_dia()
     
     def crear_widgets(self):
-        """Crea todos los widgets de la ventana principal - RESPONSIVE CON SCROLLBAR"""
+        """Crea todos los widgets de la ventana principal - DISEÑO MODERNO CON SIDEBAR"""
         
-        # ===== CANVAS SCROLLABLE PARA TODA LA VENTANA =====
-        self.canvas, scrollable_frame = crear_ventana_scrollable(self.root, None)
+        # ===== CONTENEDOR PRINCIPAL =====
+        main_container = tk.Frame(self.root, bg='#ecf0f1')
+        main_container.pack(fill=tk.BOTH, expand=True)
+        
+        # ===== SIDEBAR MODERNO =====
+        callbacks = {
+            'cuota': self.abrir_gestionar_cuotas,
+            'detalle': self.abrir_detalle_dia,
+            'editar_lote': self.abrir_editar_lote,
+            'reporte': self.generar_reporte_dia,
+            'ciclo': lambda: VentanaReiniciarCiclo(self.root),
+            'config': self.abrir_configuracion,
+            'backup': self.crear_backup_manual,
+            'estadisticas': self.abrir_estadisticas,
+            'admin': self.abrir_administrar_datos
+        }
+        
+        self.sidebar = ModernSidebar(main_container, callbacks)
+        
+        # ===== ÁREA DE CONTENIDO =====
+        content_area = tk.Frame(main_container, bg='#ecf0f1')
+        content_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         # Frame superior con título y total
-        frame_superior = ttk.Frame(scrollable_frame, padding="10")
-        frame_superior.pack(fill=tk.X)
+        frame_superior = tk.Frame(content_area, bg='#ffffff', relief=tk.FLAT, bd=0)
+        frame_superior.pack(fill=tk.X, padx=15, pady=15)
+        
+        # Título y fecha
+        header_frame = tk.Frame(frame_superior, bg='#ffffff')
+        header_frame.pack(fill=tk.X, pady=10)
         
         nombre_oficina = obtener_configuracion('nombre_oficina') or 'SISTEMA DE CONTROL DE RIEGOS'
-        ttk.Label(frame_superior, text=f"🌾 {nombre_oficina[:60]}",
-                  font=('Helvetica', 11, 'bold')).pack()
+        tk.Label(header_frame, text=f"{nombre_oficina[:60]}",
+                 font=('Segoe UI', 14, 'bold'),
+                 bg='#ffffff',
+                 fg='#2c3e50').pack()
         
-        fecha_texto = datetime.now().strftime('%d/%m/%Y')
-        ttk.Label(frame_superior, text=f"📅 {fecha_texto}",
-                  font=('Helvetica', 10)).pack()
+        fecha_texto = datetime.now().strftime('%d de %B %Y')
+        tk.Label(header_frame, text=f"{fecha_texto}",
+                 font=('Segoe UI', 10),
+                 bg='#ffffff',
+                 fg='#7f8c8d').pack()
         
-        # Panel de venta del día
-        frame_venta = ttk.LabelFrame(frame_superior, text="VENTA DEL DÍA", padding="10")
-        frame_venta.pack(pady=5)
+        # Panel de venta del día - DESTACADO
+        frame_venta = tk.Frame(frame_superior, bg='#27ae60', relief=tk.FLAT, bd=0)
+        frame_venta.pack(pady=10, padx=30, fill=tk.X)
         
-        ttk.Label(frame_venta, text="💵 $", font=('Helvetica', 20)).pack(side=tk.LEFT)
-        label_total = ttk.Label(frame_venta, textvariable=self.total_dia,
-                                font=('Helvetica', 20, 'bold'),
-                                foreground='green')
+        venta_inner = tk.Frame(frame_venta, bg='#27ae60')
+        venta_inner.pack(pady=15, padx=20)
+        
+        tk.Label(venta_inner, text="VENTA DEL DÍA",
+                font=('Segoe UI', 10, 'bold'),
+                bg='#27ae60',
+                fg='#ffffff').pack()
+        
+        total_frame = tk.Frame(venta_inner, bg='#27ae60')
+        total_frame.pack()
+        
+        tk.Label(total_frame, text="$",
+                font=('Segoe UI', 24, 'bold'),
+                bg='#27ae60',
+                fg='#ffffff').pack(side=tk.LEFT)
+        
+        label_total = tk.Label(total_frame, textvariable=self.total_dia,
+                              font=('Segoe UI', 24, 'bold'),
+                              bg='#27ae60',
+                              fg='#ffffff')
         label_total.pack(side=tk.LEFT)
         
-                # ===== FRAME DE BÚSQUEDA CON ORDENAMIENTO =====
-        frame_busqueda = ttk.LabelFrame(scrollable_frame, text="Buscar Campesino", padding="10")
-        frame_busqueda.pack(fill=tk.X, padx=10, pady=5)
+        # ===== FRAME DE BÚSQUEDA =====
+        frame_busqueda = tk.Frame(content_area, bg='#ffffff', relief=tk.FLAT, bd=0)
+        frame_busqueda.pack(fill=tk.X, padx=15, pady=(0, 10))
         
-        # Selector de orden
-        ttk.Label(frame_busqueda, text="📋 Ordenado por: Lote (Numérico)", 
-                font=('Helvetica', 9, 'bold')).pack(side=tk.LEFT, padx=5)
-
-        # Botón para recargar
-        ttk.Button(frame_busqueda, text="🔄 Actualizar",
-                command=lambda: self.cargar_todos_campesinos(ordenar_por_lote=True),
-                width=15).pack(side=tk.LEFT, padx=2)
-
+        search_inner = tk.Frame(frame_busqueda, bg='#ffffff')
+        search_inner.pack(fill=tk.X, padx=15, pady=15)
         
-        # Barra separadora vertical
-        ttk.Separator(frame_busqueda, orient='vertical').pack(side=tk.LEFT, fill='y', padx=10, pady=2)
+        # Título de búsqueda
+        tk.Label(search_inner, text="Buscar Campesino",
+                font=('Segoe UI', 11, 'bold'),
+                bg='#ffffff',
+                fg='#2c3e50').pack(anchor='w', pady=(0, 10))
         
-        # Campo de búsqueda
-        ttk.Label(frame_busqueda, text="🔍").pack(side=tk.LEFT, padx=5)
-        self.entry_busqueda = ttk.Entry(frame_busqueda, width=30, font=('Helvetica', 11))
-        self.entry_busqueda.pack(side=tk.LEFT, padx=5)
+        # Barra de búsqueda
+        search_bar = tk.Frame(search_inner, bg='#ffffff')
+        search_bar.pack(fill=tk.X)
+        
+        
+        self.entry_busqueda = tk.Entry(search_bar, width=35,
+                                      font=('Segoe UI', 11),
+                                      relief=tk.FLAT,
+                                      bg='#ecf0f1',
+                                      fg='#2c3e50',
+                                      insertbackground='#2c3e50')
+        self.entry_busqueda.pack(side=tk.LEFT, padx=5, ipady=8, ipadx=10)
         self.entry_busqueda.bind('<Return>', self.on_buscar)
         
         # Botones de búsqueda
-        ttk.Button(frame_busqueda, text="Buscar",
-                   command=self.on_buscar).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame_busqueda, text="Limpiar",
-                   command=self.limpiar_busqueda).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame_busqueda, text="➕ Nuevo Campesino",
-                   command=self.abrir_form_nuevo_campesino).pack(side=tk.LEFT, padx=20)
-
-
-
-
-        # Frame de resultados
-        frame_resultados = ttk.Frame(scrollable_frame, padding="10")
-        frame_resultados.pack(fill=tk.BOTH, expand=True, padx=10)
+        btn_buscar = tk.Button(search_bar, text="Buscar",
+                              command=self.on_buscar,
+                              font=('Segoe UI', 10),
+                              bg='#3498db',
+                              fg='#000000',
+                              relief=tk.FLAT,
+                              cursor='hand2',
+                              padx=20,
+                              pady=8)
+        btn_buscar.pack(side=tk.LEFT, padx=5)
+        add_button_hover(btn_buscar, '#3498db', '#2980b9')
         
-        # Crear Treeview
+        btn_limpiar = tk.Button(search_bar, text="Limpiar",
+                               command=self.limpiar_busqueda,
+                               font=('Segoe UI', 10),
+                               bg='#95a5a6',
+                               fg='#000000',
+                               relief=tk.FLAT,
+                               cursor='hand2',
+                               padx=20,
+                               pady=8)
+        btn_limpiar.pack(side=tk.LEFT, padx=5)
+        add_button_hover(btn_limpiar, '#95a5a6', '#7f8c8d')
+        
+        btn_nuevo = tk.Button(search_bar, text="➕ Nuevo Campesino",
+                             command=self.abrir_form_nuevo_campesino,
+                             font=('Segoe UI', 10, 'bold'),
+                             bg='#27ae60',
+                             fg='#000000',
+                             relief=tk.FLAT,
+                             cursor='hand2',
+                             padx=20,
+                             pady=8)
+        btn_nuevo.pack(side=tk.LEFT, padx=15)
+        add_button_hover(btn_nuevo, '#27ae60', '#229954')
+        
+        # ===== TABLA DE CAMPESINOS =====
+        frame_tabla = tk.Frame(content_area, bg='#ffffff', relief=tk.FLAT, bd=0)
+        frame_tabla.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 15))
+        
+        # Título de tabla
+        tabla_header = tk.Frame(frame_tabla, bg='#ffffff')
+        tabla_header.pack(fill=tk.X, padx=15, pady=(15, 10))
+        
+        tk.Label(tabla_header, text="Lista de Campesinos",
+                font=('Segoe UI', 11, 'bold'),
+                bg='#ffffff',
+                fg='#2c3e50').pack(side=tk.LEFT)
+        
+        tk.Label(tabla_header, text="Ordenado por: Lote (Numérico)",
+                font=('Segoe UI', 9),
+                bg='#ffffff',
+                fg='#7f8c8d').pack(side=tk.LEFT, padx=10)
+        
+        btn_actualizar = tk.Button(tabla_header, text="🔄 Actualizar",
+                                   command=lambda: self.cargar_todos_campesinos(ordenar_por_lote=True),
+                                   font=('Segoe UI', 9),
+                                   bg='#ecf0f1',
+                                   fg='#2c3e50',
+                                   relief=tk.FLAT,
+                                   cursor='hand2',
+                                   padx=15,
+                                   pady=5)
+        btn_actualizar.pack(side=tk.LEFT)
+        add_button_hover(btn_actualizar, '#ecf0f1', '#bdc3c7')
+        
+        # Frame para treeview
+        tree_container = tk.Frame(frame_tabla, bg='#ffffff')
+        tree_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 15))
+        
+        # Crear Treeview con estilo
         columnas = ('lote', 'nombre', 'localidad', 'barrio', 'superficie', 'cultivo', 'riegos')
-        self.tree = ttk.Treeview(frame_resultados, columns=columnas, show='headings', height=12)
+        self.tree = ttk.Treeview(tree_container, columns=columnas, show='headings', height=15)
+        
+        # Configurar estilo del Treeview
+        style = ttk.Style()
+        style.configure("Treeview",
+                       background="#ffffff",
+                       foreground="#2c3e50",
+                       fieldbackground="#ffffff",
+                       font=('Segoe UI', 10))
+        style.configure("Treeview.Heading",
+                       font=('Segoe UI', 10, 'bold'),
+                       background="#34495e",
+                       foreground="#000000")
         
         # Encabezados
         self.tree.heading('lote', text='Lote')
@@ -242,17 +414,17 @@ class VentanaPrincipal:
         self.tree.heading('cultivo', text='Cultivo Actual')
         self.tree.heading('riegos', text='Riegos')
         
-        # Anchos de columna - RESPONSIVE
+        # Anchos de columna
         self.tree.column('lote', width=70)
         self.tree.column('nombre', width=200)
         self.tree.column('localidad', width=120)
         self.tree.column('barrio', width=80)
-        self.tree.column('superficie', width=70)
-        self.tree.column('cultivo', width=100)
+        self.tree.column('superficie', width=80)
+        self.tree.column('cultivo', width=120)
         self.tree.column('riegos', width=70)
         
         # Scrollbar
-        scrollbar_tree = ttk.Scrollbar(frame_resultados, orient=tk.VERTICAL, command=self.tree.yview)
+        scrollbar_tree = ttk.Scrollbar(tree_container, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscroll=scrollbar_tree.set)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar_tree.pack(side=tk.RIGHT, fill=tk.Y)
@@ -261,46 +433,104 @@ class VentanaPrincipal:
         self.tree.bind('<<TreeviewSelect>>', self.on_seleccionar_campesino)
         self.tree.bind('<Double-1>', self.on_doble_click)
         
-        # Frame de botones principales - CON WRAPPING EN WINDOWS
-        frame_botones = ttk.Frame(scrollable_frame, padding="5")
-        frame_botones.pack(fill=tk.X, padx=5, pady=2)
+        # ===== BOTONES DE ACCIÓN RÁPIDA =====
+        frame_acciones = tk.Frame(content_area, bg='#ffffff', relief=tk.FLAT, bd=0)
+        frame_acciones.pack(fill=tk.X, padx=15, pady=(0, 15))
         
-        ttk.Button(frame_botones, text="🌱 Siembra",
-                   command=lambda: self.abrir_ventana_venta('nueva'),
-                   width=12).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(frame_botones, text="💧 Riego",
-                   command=lambda: self.abrir_ventana_venta('riego'),
-                   width=12).pack(side=tk.LEFT, padx=2, pady=2)
+        acciones_inner = tk.Frame(frame_acciones, bg='#ffffff')
+        acciones_inner.pack(pady=15)
         
-        ttk.Button(frame_botones, text="💰 Cuota", command=self.abrir_gestionar_cuotas, width=12).pack(side=tk.LEFT, padx=2, pady=2)
+        tk.Label(acciones_inner, text="Acciones Rápidas",
+                font=('Segoe UI', 10, 'bold'),
+                bg='#ffffff',
+                fg='#2c3e50').pack(anchor='w', pady=(0, 10))
         
-        ttk.Button(frame_botones, text="📋 Detalle",
-                   command=self.abrir_detalle_dia,
-                   width=12).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(frame_botones, text="📜 Historial",
-                   command=self.abrir_historial_campesino,
-                   width=12).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(frame_botones, text="✏️ Editar Lote",
-          command=self.abrir_editar_lote,
-          width=12).pack(side=tk.LEFT, padx=2, pady=2)
-        # Frame de botones inferiores
-        frame_botones_inf = ttk.Frame(scrollable_frame, padding="5")
-        frame_botones_inf.pack(fill=tk.X, padx=5, pady=2)
+        botones_frame = tk.Frame(acciones_inner, bg='#ffffff')
+        botones_frame.pack()
         
-        ttk.Button(frame_botones_inf, text="📊 Reporte",
-                   command=self.generar_reporte_dia, width=12).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(frame_botones_inf, text="🔒 Cerrar Día",
-                   command=self.cerrar_dia_dialog, width=12).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(frame_botones_inf, text="🔄 Ciclo",
-                   command=lambda: VentanaReiniciarCiclo(self.root), width=12).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(frame_botones_inf, text="⚙️ Config",
-                   command=self.abrir_configuracion, width=12).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(frame_botones_inf, text="💾 Backup",
-                   command=self.crear_backup_manual, width=12).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(frame_botones_inf, text="📊 Estadísticas",
-          command=self.abrir_estadisticas, width=12).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(frame_botones_inf, text="🔧 Admin",
-                   command=self.abrir_administrar_datos, width=12).pack(side=tk.LEFT, padx=2, pady=2)
+        # Lista para almacenar referencias de PhotoImage
+        self.action_button_icons = []
+        
+        # Datos de botones: (texto, callback, color bg, color hover, svg_file)
+        action_buttons_data = [
+            ("Siembra", lambda: self.abrir_ventana_venta('nueva'), '#16a085', '#138d75', 'siembraN.svg'),
+            ("Riego", lambda: self.abrir_ventana_venta('riego'), '#2980b9', '#21618c', 'riego.svg'),
+            ("Historial", self.abrir_historial_campesino, '#8e44ad', '#7d3c98', 'historial.svg'),
+            ("Cerrar Día", self.cerrar_dia_dialog, '#c0392b', '#a93226', 'cerrar dia.svg')
+        ]
+        
+        for text, command, bg_color, hover_color, svg_file in action_buttons_data:
+            # Cargar icono
+            icon = load_svg_icon(svg_file, size=28)
+            
+            if icon:
+                # Guardar referencia para evitar garbage collection
+                self.action_button_icons.append(icon)
+                
+                # Frame para el botón completo
+                btn_container = tk.Frame(botones_frame, bg=bg_color, cursor='hand2')
+                btn_container.pack(side=tk.LEFT, padx=5)
+                
+                # Frame interno para centrar contenido
+                inner_frame = tk.Frame(btn_container, bg=bg_color)
+                inner_frame.pack(padx=20, pady=10)
+                
+                # Icono
+                icon_label = tk.Label(inner_frame, image=icon, bg=bg_color, cursor='hand2')
+                icon_label.pack(side=tk.LEFT, padx=(0, 8))
+                
+                # Texto
+                text_label = tk.Label(inner_frame, text=text, 
+                                     font=('Segoe UI', 10, 'bold'),
+                                     bg=bg_color, fg='#ffffff',
+                                     cursor='hand2')
+                text_label.pack(side=tk.LEFT)
+                
+                # Bind click events
+                btn_container.bind('<Button-1>', lambda e, cmd=command: cmd())
+                icon_label.bind('<Button-1>', lambda e, cmd=command: cmd())
+                text_label.bind('<Button-1>', lambda e, cmd=command: cmd())
+                
+                # Bind hover events
+                def on_enter(e, container=btn_container, inner=inner_frame, icon_lbl=icon_label, txt_lbl=text_label, color=hover_color):
+                    container.configure(bg=color)
+                    inner.configure(bg=color)
+                    icon_lbl.configure(bg=color)
+                    txt_lbl.configure(bg=color)
+                
+                def on_leave(e, container=btn_container, inner=inner_frame, icon_lbl=icon_label, txt_lbl=text_label, color=bg_color):
+                    container.configure(bg=color)
+                    inner.configure(bg=color)
+                    icon_lbl.configure(bg=color)
+                    txt_lbl.configure(bg=color)
+                
+                btn_container.bind('<Enter>', on_enter)
+                btn_container.bind('<Leave>', on_leave)
+                icon_label.bind('<Enter>', on_enter)
+                icon_label.bind('<Leave>', on_leave)
+                text_label.bind('<Enter>', on_enter)
+                text_label.bind('<Leave>', on_leave)
+                
+            else:
+                # Fallback: botón con emoji si no se pudo cargar SVG
+                emoji_map = {
+                    "Siembra": "🌱",
+                    "Riego": "💧",
+                    "Historial": "📜",
+                    "Cerrar Día": "🔒"
+                }
+                btn = tk.Button(botones_frame, text=f"{emoji_map.get(text, '')} {text}",
+                               command=command,
+                               font=('Segoe UI', 10, 'bold'),
+                               bg=bg_color,
+                               fg='#ffffff',
+                               relief=tk.FLAT,
+                               cursor='hand2',
+                               padx=20,
+                               pady=10,
+                               width=12)
+                btn.pack(side=tk.LEFT, padx=5)
+                add_button_hover(btn, bg_color, hover_color)
         
         # Cargar todos los campesinos
         self.cargar_todos_campesinos(ordenar_por_lote=True)
@@ -624,7 +854,7 @@ class VentanaVenta:
         frame_botones.pack(fill=tk.X, padx=10, pady=20)
         
         ttk.Button(frame_botones,
-                   text="✅ Generar Recibo e Imprimir",
+                   text="✅ Generar Recibo",
                    command=self.generar_recibo,
                    width=30).pack(side=tk.LEFT, padx=5)
         
@@ -689,25 +919,18 @@ class VentanaVenta:
                 resultado = vender_riego(self.campesino['id'], cargo_documentos=cargo_docs)
                 tipo_texto = "Riego adicional"
             
-            # Generar recibo temporal
-            pdf_path = generar_recibo_pdf_temporal(resultado['recibo_id'])
+            # Generar recibo permanente
+            pdf_path = generar_recibo_pdf(resultado['recibo_id'])
             
-            # Abrir vista previa
+            # Abrir archivo automáticamente
             abrir_pdf(pdf_path)
             
-            # Preguntar si desea imprimir
-            if messagebox.askyesno("Imprimir Recibo",
-                                   f"Recibo generado exitosamente\nFolio: {resultado['folio']}\nCosto: ${resultado['costo']:.2f}\n\n¿Desea imprimir?"):
-                imprimir_recibo_y_limpiar(pdf_path)
-            else:
-                # Eliminar si no va a imprimir
-                try:
-                    os.remove(pdf_path)
-                except:
-                    pass
-            
+            # Mensaje de éxito simple
             messagebox.showinfo("Éxito",
-                                f"{tipo_texto} registrado exitosamente\nFolio: {resultado['folio']}\nCosto: ${resultado['costo']:.2f}")
+                                f"{tipo_texto} registrado exitosamente\nFolio: {resultado['folio']}\nCosto: ${resultado['costo']:.2f}\n\nEl recibo se ha abierto automáticamente.")
+            
+            # Ya mostramos el mensaje arriba
+            pass
             
             # Actualizar ventana principal
             self.ventana_principal.actualizar_total_dia()
@@ -1232,7 +1455,7 @@ class VentanaDetalleDia:
                    command=self.eliminar_recibo).pack(side=tk.LEFT, padx=5)
         
         ttk.Button(frame_acciones,
-                   text="🖨️ Reimprimir Recibo",
+                   text="📄 Ver Recibo",
                    command=self.reimprimir_recibo).pack(side=tk.LEFT, padx=5)
         
         ttk.Button(frame_acciones,
@@ -1369,18 +1592,15 @@ class VentanaDetalleDia:
         
         item = self.tree.item(selection[0])
         recibo_id = int(item['tags'][0])
-        
         try:
-            pdf_path = generar_recibo_pdf_temporal(recibo_id, es_reimpresion=True)
+            # Generar recibo permanente (reimpresión)
+            pdf_path = generar_recibo_pdf(recibo_id, es_reimpresion=True)
+            
+            # Abrir archivo automáticamente
             abrir_pdf(pdf_path)
             
-            if messagebox.askyesno("Imprimir", "¿Desea imprimir la reimpresión?"):
-                imprimir_recibo_y_limpiar(pdf_path)
-            else:
-                try:
-                    os.remove(pdf_path)
-                except:
-                    pass
+            messagebox.showinfo("Éxito", "Recibo abierto correctamente.")
+            
         except Exception as e:
             messagebox.showerror("Error", f"Error al reimprimir:\n{str(e)}")
     
@@ -1404,14 +1624,14 @@ class VentanaDetalleDia:
     def exportarexcel(self):
         """Exporta los recibos a Excel"""
         try:
-            recibos = obtenerrecibosdia(self.fechaactual)
+            recibos = obtenerrecibosdia(self.fecha_actual)
             if not recibos:
                 messagebox.showinfo("Información", "No hay recibos para exportar")
                 return
             
             # CORRECCIÓN: Usar self.fechaactual en lugar de datetime.now()
             # Esto mantiene consistencia con los PDFs que también usan la fecha consultada
-            fechaarchivo = datetime.strptime(self.fechaactual, "%Y-%m-%d").strftime("%Y%m%d")
+            fechaarchivo = datetime.strptime(self.fecha_actual, "%Y-%m-%d").strftime("%Y%m%d")
             filename = f"recibos_{fechaarchivo}.xlsx"  # Agregado guión bajo para claridad
             
             filepath = exportaraexcel(recibos, filename)
@@ -1510,7 +1730,7 @@ class FormularioCampesino:
         frame_botones.grid(row=7, column=0, columnspan=2, pady=20)
         
         if self.campesino:
-            frameespecial = ttk.LabelFrame(frameform, text="⚙️ Operaciones Especiales", padding="10")
+            frameespecial = ttk.LabelFrame(frame_form, text="⚙️ Operaciones Especiales", padding="10")
             frameespecial.grid(row=6, column=0, columnspan=2, pady=10, sticky='ew')  # ✅ Cambiar a grid
             
             ttk.Button(frameespecial, text="✏️ Renombrar Dueño",
@@ -1522,12 +1742,12 @@ class FormularioCampesino:
                     width=25).pack(side=tk.LEFT, padx=5)
 
         # Frame de botones (Guardar/Cancelar)
-        framebotones = ttk.Frame(frameform)
-        framebotones.grid(row=7, column=0, columnspan=2, pady=20)
+        frame_botones = ttk.Frame(frame_form)
+        frame_botones.grid(row=7, column=0, columnspan=2, pady=20)
 
-        ttk.Button(framebotones, text="💾 Guardar",
+        ttk.Button(frame_botones, text="💾 Guardar",
                 command=self.guardar, width=15).pack(side=tk.LEFT, padx=5)
-        ttk.Button(framebotones, text="❌ Cancelar",
+        ttk.Button(frame_botones, text="❌ Cancelar",
                 command=self.ventana.destroy, width=15).pack(side=tk.LEFT, padx=5)
     
     def guardar(self):
@@ -1710,7 +1930,7 @@ class VentanaHistorial:
         frame_botones.pack(fill=tk.X, padx=10, pady=10)
         
         ttk.Button(frame_botones,
-                   text="🖨️ Reimprimir Recibo Seleccionado",
+                   text="📄 Ver Recibo Seleccionado",
                    command=self.reimprimir_recibo).pack(side=tk.LEFT, padx=5)
         
         ttk.Button(frame_botones,
@@ -1811,18 +2031,15 @@ class VentanaHistorial:
         
         item = self.tree_recibos.item(selection[0])
         recibo_id = int(item['tags'][0])
-        
         try:
-            pdf_path = generar_recibo_pdf_temporal(recibo_id, es_reimpresion=True)
+            # Generar recibo permanente (reimpresión)
+            pdf_path = generar_recibo_pdf(recibo_id, es_reimpresion=True)
+            
+            # Abrir archivo automáticamente
             abrir_pdf(pdf_path)
             
-            if messagebox.askyesno("Imprimir", "¿Desea imprimir?"):
-                imprimir_recibo_y_limpiar(pdf_path)
-            else:
-                try:
-                    os.remove(pdf_path)
-                except:
-                    pass
+            messagebox.showinfo("Éxito", "Recibo abierto correctamente.")
+            
         except Exception as e:
             messagebox.showerror("Error", f"Error al reimprimir:\n{str(e)}")
 
@@ -2654,7 +2871,7 @@ class VentanaPagoCuota:
                 
             if messagebox.askyesno("Confirmar", f"¿Registrar abono de ${monto:.2f}?"):
                 from modules.cuotas import registrar_abono
-                from modules.reports import generar_recibo_cuota_pdf_temporal, abrir_pdf, imprimir_recibo_y_limpiar
+                from modules.reports import generar_recibo_cuota_pdf, abrir_pdf
                 import os # Import os for file operations
                 
                 resultado = registrar_abono(self.cuota_id, monto)
@@ -2664,16 +2881,13 @@ class VentanaPagoCuota:
                                       "Se ha cubierto el total de la cuota.\nGenerando recibo...")
                     
                     if resultado['recibo']:
-                        pdf_path = generar_recibo_cuota_pdf_temporal(resultado['recibo']['recibo_id'])
+                        # Generar recibo permanente
+                        pdf_path = generar_recibo_cuota_pdf(resultado['recibo']['recibo_id'])
+                        
+                        # Abrir archivo automáticamente
                         abrir_pdf(pdf_path)
                         
-                        if messagebox.askyesno("Imprimir", "¿Desea imprimir el recibo?"):
-                            imprimir_recibo_y_limpiar(pdf_path)
-                        else:
-                            try:
-                                os.remove(pdf_path)
-                            except:
-                                pass
+                        messagebox.showinfo("Éxito", "Recibo de cuota abierto correctamente.")
                 else:
                     saldo = resultado['saldo_restante']
                     messagebox.showinfo("Abono Registrado", 
@@ -2998,7 +3212,7 @@ class VentanaGestorReportes:
                   command=self.abrir_reporte,
                   width=15).pack(side=tk.LEFT, padx=5)
         
-        ttk.Button(frame_btns_inf, text="🖨️ Imprimir",
+        ttk.Button(frame_btns_inf, text="📄 Ver Reporte",
                   command=self.imprimir_reporte,
                   width=15).pack(side=tk.LEFT, padx=5)
         
@@ -3183,22 +3397,20 @@ class VentanaGestorReportes:
             raise Exception(f"No se pudo abrir el archivo: {str(e)}")
 
     def imprimir_reporte(self):
-        """Imprime el reporte seleccionado"""
+        """Abre el reporte PDF generado"""
         selection = self.tree.selection()
         if not selection:
             messagebox.showwarning("Advertencia", "Debe seleccionar un reporte")
             return
-        
+
         item = self.tree.item(selection[0])
         ruta_pdf = item['tags'][0]
-        
-        if messagebox.askyesno("Confirmar", "¿Imprimir este reporte?"):
-            try:
-                from modules.reports import imprimir_recibo
-                imprimir_recibo(ruta_pdf)
-                messagebox.showinfo("Éxito", "Reporte enviado a imprimir")
-            except Exception as e:
-                messagebox.showerror("Error", f"Error al imprimir:\n{str(e)}")
+
+        try:
+            self.abrir_archivo(ruta_pdf)
+            messagebox.showinfo("Éxito", "Reporte abierto correctamente")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al abrir reporte:\n{str(e)}")
     
     def eliminar_reporte(self):
         """Elimina el reporte seleccionado"""
@@ -3965,22 +4177,15 @@ class VentanaDetalleCuota:
                 
                 # Generar y mostrar recibo
                 from modules.reports import generar_recibo_cuota_pdf_temporal, abrir_pdf
+                # Generar recibo permanente y abrirlo
+                from modules.reports import generar_recibo_cuota_pdf, abrir_pdf
                 
-                pdf_path = generar_recibo_cuota_pdf_temporal(resultado['recibo_id'])
+                recibo_id = resultado['recibo_id']
+                pdf_path = generar_recibo_cuota_pdf(recibo_id)
+                
+                # Abrir archivo automáticamente
                 abrir_pdf(pdf_path)
                 
-                if messagebox.askyesno("Imprimir Recibo",
-                                       f"Recibo generado exitosamente\n"
-                                       f"Folio: {resultado['folio']}\n"
-                                       f"Monto: ${resultado['monto']:.2f}\n"
-                                       f"¿Desea imprimir?"):
-                    from modules.reports import imprimir_recibo_y_limpiar
-                    imprimir_recibo_y_limpiar(pdf_path)
-                else:
-                    try:
-                        os.remove(pdf_path)
-                    except:
-                        pass
                 
                 messagebox.showinfo("Éxito", "Cuota pagada correctamente")
                 self.cargar_detalle()

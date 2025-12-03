@@ -28,6 +28,7 @@ from modules.models import obtener_recibo_por_id, obtener_configuracion
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
+from modules.utils import resource_path
 # ==================== CONFIGURACIÓN DE RECIBO ====================
 
 # IMPORTANTE: Recibo en formato 1/3 carta - ORIENTACIÓN VERTICAL
@@ -35,7 +36,8 @@ RECIBO_ANCHO = 21.6 * cm
 RECIBO_ALTO = 9.1 * cm
 
 # Ruta del logo
-LOGO_PATH = os.path.join('assets', 'lagoo.png')
+# Ruta del logo
+LOGO_PATH = resource_path(os.path.join('assets', 'zapata.png'))
 
 # ==================== UTILIDADES DE IMPRESIÓN (Windows) ====================
 
@@ -1758,6 +1760,33 @@ def generar_pdf_auditoria(registros_auditoria: List[Dict], fecha_inicio=None, fe
     
     print(f"✅ PDF de auditoría generado: {ruta_pdf}")
     return ruta_pdf
+
+def generar_recibo_cuota_pdf(recibo_cuota_id: int) -> str:
+    """Genera el PDF PERMANENTE de un recibo de cuota de cooperación"""
+    from modules.cuotas import obtener_recibo_cuota
+    
+    recibo = obtener_recibo_cuota(recibo_cuota_id)
+    
+    if not recibo:
+        raise ValueError("Recibo de cuota no encontrado")
+    
+    nombre_oficina = obtener_configuracion('nombre_oficina') or "ASOCIACIÓN DE RIEGO"
+    ubicacion = obtener_configuracion('ubicacion') or "Tezontepec de Aldama, Hgo."
+    
+    # Crear carpeta permanente
+    recibos_dir = os.path.join('database', 'recibos')
+    os.makedirs(recibos_dir, exist_ok=True)
+    
+    filename = f"cuota_{recibo['folio']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
+    filepath = os.path.join(recibos_dir, filename)
+    
+    c = canvas.Canvas(filepath, pagesize=(RECIBO_ANCHO, RECIBO_ALTO))
+    
+    dibujar_recibo_cuota(c, recibo, nombre_oficina, ubicacion)
+    
+    c.save()
+    
+    return filepath
 
 def generar_recibo_cuota_pdf_temporal(recibo_cuota_id: int) -> str:
     """Genera el PDF temporal de un recibo de cuota de cooperación"""
