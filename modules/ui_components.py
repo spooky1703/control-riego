@@ -876,10 +876,11 @@ class VentanaVenta:
         frame_botones = ttk.Frame(self.frame_principal)
         frame_botones.pack(fill=tk.X, padx=10, pady=20)
         
-        ttk.Button(frame_botones,
+        self.btn_generar = ttk.Button(frame_botones,
                    text="✅ Generar Recibo",
                    command=self.generar_recibo,
-                   width=30).pack(side=tk.LEFT, padx=5)
+                   width=30)
+        self.btn_generar.pack(side=tk.LEFT, padx=5)
         
         ttk.Button(frame_botones,
                    text="❌ Cancelar",
@@ -924,9 +925,18 @@ class VentanaVenta:
     
     def generar_recibo(self):
         """Genera el recibo y lo imprime - RECIBOS TEMPORALES"""
+        # PARCHE: Prevenir doble clic
+        if hasattr(self, '_procesando') and self._procesando:
+            return  # Ya se está procesando, ignorar clic adicional
+        
+        self._procesando = True
+        self.btn_generar.config(state='disabled')  # Deshabilitar botón visualmente
+        
         # Validar cultivo
         if not self.combo_cultivo.get():
             messagebox.showwarning("Advertencia", "Debe seleccionar un cultivo")
+            self._procesando = False
+            self.btn_generar.config(state='normal')
             return
         
         try:
@@ -964,8 +974,12 @@ class VentanaVenta:
             
         except ValueError as e:
             messagebox.showerror("Error de Validación", str(e))
+            self._procesando = False
+            self.btn_generar.config(state='normal')
         except Exception as e:
             messagebox.showerror("Error", f"Error al generar recibo:\n{str(e)}")
+            self._procesando = False
+            self.btn_generar.config(state='normal')
 
 # ==================== VENTANA EDITAR SIEMBRA Y RIEGO ====================
 
@@ -2878,18 +2892,29 @@ class VentanaPagoCuota:
         btn_frame = ttk.Frame(frame, padding="10")
         btn_frame.pack(fill=tk.X, pady=10)
         
-        ttk.Button(btn_frame, text="✅ Registrar Pago", command=self.registrar_pago).pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        self.btn_pago = ttk.Button(btn_frame, text="✅ Registrar Pago", command=self.registrar_pago)
+        self.btn_pago.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
         ttk.Button(btn_frame, text="❌ Cancelar", command=self.ventana.destroy).pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
         
     def registrar_pago(self):
+        # PARCHE: Prevenir doble clic
+        if hasattr(self, '_procesando') and self._procesando:
+            return
+        self._procesando = True
+        self.btn_pago.config(state='disabled')
+        
         try:
             monto = float(self.entry_abono.get())
             if monto <= 0:
                 messagebox.showwarning("Error", "El monto debe ser mayor a 0")
+                self._procesando = False
+                self.btn_pago.config(state='normal')
                 return
                 
             if monto > self.saldo_pendiente + 0.01:
                 messagebox.showwarning("Error", f"El monto excede el saldo pendiente (${self.saldo_pendiente:.2f})")
+                self._procesando = False
+                self.btn_pago.config(state='normal')
                 return
                 
             if messagebox.askyesno("Confirmar", f"¿Registrar abono de ${monto:.2f}?"):
