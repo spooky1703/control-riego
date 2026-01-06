@@ -196,7 +196,6 @@ def desactivar_tipo_cuota(tipo_id: int):
     conn.close()
 
 # ==================== ASIGNACIÓN DE CUOTAS ====================
-# ==================== ASIGNACIÓN DE CUOTAS ====================
 
 def asignar_cuota_a_campesino(campesino_id: int, numero_lote: str, nombre_campesino: str, 
                                barrio: str, tipo_cuota_id: int, superficie: float) -> int:
@@ -268,7 +267,6 @@ def asignar_cuota_masiva(tipo_cuota_id: int, campesinos_lista: List[Dict]) -> in
     conn.commit()
     conn.close()
     return total_asignados
-
 
 def obtener_cuotas_campesino(campesino_id: int) -> List[Dict]:
     """Obtiene todas las cuotas de un campesino (pagadas y pendientes)"""
@@ -520,13 +518,23 @@ def pagar_cuota(cuota_campesino_id: int, sobrecargo: float = 0.0) -> Dict:
     else:
         raise ValueError("Error inesperado al procesar el pago completo")
 
-
 def obtener_recibo_cuota(recibo_id: int) -> Optional[Dict]:
     """Obtiene un recibo de cuota por su ID"""
     conn = get_cuotas_connection()
     cursor = conn.cursor()
     
     cursor.execute('SELECT * FROM recibos_cuotas WHERE id = ?', (recibo_id,))
+    row = cursor.fetchone()
+    
+    conn.close()
+    return dict(row) if row else None
+
+def obtener_recibo_por_cuota_campesino(cuota_campesino_id: int) -> Optional[Dict]:
+    """Obtiene el recibo de cuota asociado a una cuota pagada (por cuota_campesino_id)"""
+    conn = get_cuotas_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM recibos_cuotas WHERE cuota_campesino_id = ?', (cuota_campesino_id,))
     row = cursor.fetchone()
     
     conn.close()

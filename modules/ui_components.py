@@ -2060,25 +2060,61 @@ class VentanaHistorial:
         VentanaPagoCuota(self.ventana, cuota_id, self)
     
     def reimprimir_recibo(self):
-        """Reimprime el recibo seleccionado - RECIBOS TEMPORALES"""
-        selection = self.tree_recibos.selection()
-        if not selection:
-            messagebox.showwarning("Advertencia", "Debe seleccionar un recibo")
-            return
+        """Reimprime el recibo seleccionado - Funciona para recibos normales Y cuotas pagadas"""
+        # Primero verificar si hay un recibo normal seleccionado
+        selection_recibo = self.tree_recibos.selection()
+        selection_cuota = self.tree_cuotas.selection()
         
-        item = self.tree_recibos.item(selection[0])
-        recibo_id = int(item['tags'][0])
-        try:
-            # Generar recibo permanente (reimpresión)
-            pdf_path = generar_recibo_pdf(recibo_id, es_reimpresion=True)
+        if selection_recibo:
+            # Reimprimir recibo de riego/siembra
+            item = self.tree_recibos.item(selection_recibo[0])
+            recibo_id = int(item['tags'][0])
+            try:
+                # Generar recibo permanente (reimpresión)
+                pdf_path = generar_recibo_pdf(recibo_id, es_reimpresion=True)
+                
+                # Abrir archivo automáticamente
+                abrir_pdf(pdf_path)
+                
+                messagebox.showinfo("Éxito", "Recibo abierto correctamente.")
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Error al reimprimir:\n{str(e)}")
+        
+        elif selection_cuota:
+            # Verificar si la cuota está pagada
+            item = self.tree_cuotas.item(selection_cuota[0])
+            cuota_id = int(item['tags'][0])
+            pagado = int(item['tags'][1])
             
-            # Abrir archivo automáticamente
-            abrir_pdf(pdf_path)
+            if not pagado:
+                messagebox.showwarning("Advertencia", "Solo se pueden reimprimir recibos de cuotas pagadas.\nEsta cuota aún está pendiente.")
+                return
             
-            messagebox.showinfo("Éxito", "Recibo abierto correctamente.")
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Error al reimprimir:\n{str(e)}")
+            try:
+                # Obtener el recibo de la cuota pagada
+                from modules.cuotas import obtener_recibo_por_cuota_campesino
+                from modules.reports import generar_recibo_cuota_pdf
+                
+                recibo = obtener_recibo_por_cuota_campesino(cuota_id)
+                
+                if not recibo:
+                    messagebox.showerror("Error", "No se encontró el recibo para esta cuota.")
+                    return
+                
+                # Generar recibo de cuota (sin leyenda de reimpresión)
+                pdf_path = generar_recibo_cuota_pdf(recibo['id'])
+                
+                # Abrir archivo automáticamente
+                abrir_pdf(pdf_path)
+                
+                messagebox.showinfo("Éxito", "Recibo de cuota abierto correctamente.")
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Error al reimprimir recibo de cuota:\n{str(e)}")
+        
+        else:
+            messagebox.showwarning("Advertencia", "Debe seleccionar un recibo o una cuota pagada")
 
 
 # ==================== DIÁLOGO DE CONFIGURACIÓN ====================
