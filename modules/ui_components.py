@@ -924,46 +924,63 @@ class VentanaVenta:
             self.combo_cultivo.config(state='readonly')
     
     def generar_recibo(self):
-        """Genera el recibo y lo imprime - RECIBOS TEMPORALES"""
+        """Genera el recibo y lo imprime - CON THREADING para no congelar UI"""
         # PARCHE: Prevenir doble clic
         if hasattr(self, '_procesando') and self._procesando:
             return  # Ya se está procesando, ignorar clic adicional
         
-        self._procesando = True
-        self.btn_generar.config(state='disabled')  # Deshabilitar botón visualmente
-        
-        # Validar cultivo
+        # Validar cultivo ANTES de iniciar el hilo
         if not self.combo_cultivo.get():
             messagebox.showwarning("Advertencia", "Debe seleccionar un cultivo")
-            self._procesando = False
-            self.btn_generar.config(state='normal')
             return
         
+        self._procesando = True
+        self.btn_generar.config(state='disabled')
+        
+        # Cambiar cursor a espera
         try:
-            accion = self.var_accion.get()
-            cultivo = self.combo_cultivo.get()
-            cargo_docs = self.var_cargo_documentos.get()
-            
+            self.ventana.config(cursor="wait")
+            self.ventana.update_idletasks()
+        except:
+            pass
+        
+        # Capturar valores antes de iniciar el hilo
+        accion = self.var_accion.get()
+        cultivo = self.combo_cultivo.get()
+        cargo_docs = self.var_cargo_documentos.get()
+        campesino_id = self.campesino['id']
+        
+        def operacion_pesada():
+            """Esta función se ejecuta en un hilo secundario"""
             # Generar venta con cargo por documentos si está marcado
             if accion == 'nueva':
-                resultado = nueva_siembra(self.campesino['id'], cultivo, cargo_documentos=cargo_docs)
+                resultado = nueva_siembra(campesino_id, cultivo, cargo_documentos=cargo_docs)
                 tipo_texto = "Nueva siembra"
             else:
-                resultado = vender_riego(self.campesino['id'], cargo_documentos=cargo_docs)
+                resultado = vender_riego(campesino_id, cargo_documentos=cargo_docs)
                 tipo_texto = "Riego adicional"
             
-            # Generar recibo permanente
+            # Generar recibo permanente (operación pesada)
             pdf_path = generar_recibo_pdf(resultado['recibo_id'])
             
+            return {'resultado': resultado, 'tipo_texto': tipo_texto, 'pdf_path': pdf_path}
+        
+        def on_exito(datos):
+            """Callback cuando la operación termina exitosamente"""
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
+            
             # Abrir archivo automáticamente
-            abrir_pdf(pdf_path)
+            abrir_pdf(datos['pdf_path'])
+            
+            resultado = datos['resultado']
+            tipo_texto = datos['tipo_texto']
             
             # Mensaje de éxito simple
             messagebox.showinfo("Éxito",
                                 f"{tipo_texto} registrado exitosamente\nFolio: {resultado['folio']}\nCosto: ${resultado['costo']:.2f}\n\nEl recibo se ha abierto automáticamente.")
-            
-            # Ya mostramos el mensaje arriba
-            pass
             
             # Actualizar ventana principal
             self.ventana_principal.actualizar_total_dia()
@@ -971,15 +988,25 @@ class VentanaVenta:
 
             # Cerrar ventana
             self.ventana.destroy()
+        
+        def on_error(error):
+            """Callback cuando hay un error"""
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
             
-        except ValueError as e:
-            messagebox.showerror("Error de Validación", str(e))
             self._procesando = False
             self.btn_generar.config(state='normal')
-        except Exception as e:
-            messagebox.showerror("Error", f"Error al generar recibo:\n{str(e)}")
-            self._procesando = False
-            self.btn_generar.config(state='normal')
+            
+            if isinstance(error, ValueError):
+                messagebox.showerror("Error de Validación", str(error))
+            else:
+                messagebox.showerror("Error", f"Error al generar recibo:\n{str(error)}")
+        
+        # Ejecutar en hilo secundario
+        from modules.utils import ejecutar_en_hilo
+        ejecutar_en_hilo(self.ventana, operacion_pesada, on_exito, on_error)
 
 # ==================== VENTANA EDITAR SIEMBRA Y RIEGO ====================
 
@@ -2060,7 +2087,7 @@ class VentanaHistorial:
         VentanaPagoCuota(self.ventana, cuota_id, self)
     
     def reimprimir_recibo(self):
-        """Reimprime el recibo seleccionado - Funciona para recibos normales Y cuotas pagadas"""
+        """Reimprime el recibo seleccionado - CON THREADING para no congelar UI"""
         # Primero verificar si hay un recibo normal seleccionado
         selection_recibo = self.tree_recibos.selection()
         selection_cuota = self.tree_cuotas.selection()
@@ -2069,17 +2096,34 @@ class VentanaHistorial:
             # Reimprimir recibo de riego/siembra
             item = self.tree_recibos.item(selection_recibo[0])
             recibo_id = int(item['tags'][0])
+            
+            # Cambiar cursor a espera
             try:
-                # Generar recibo permanente (reimpresión)
-                pdf_path = generar_recibo_pdf(recibo_id, es_reimpresion=True)
-                
-                # Abrir archivo automáticamente
+                self.ventana.config(cursor="wait")
+                self.ventana.update_idletasks()
+            except:
+                pass
+            
+            def operacion_pesada():
+                return generar_recibo_pdf(recibo_id, es_reimpresion=True)
+            
+            def on_exito(pdf_path):
+                try:
+                    self.ventana.config(cursor="")
+                except:
+                    pass
                 abrir_pdf(pdf_path)
-                
                 messagebox.showinfo("Éxito", "Recibo abierto correctamente.")
-                
-            except Exception as e:
-                messagebox.showerror("Error", f"Error al reimprimir:\n{str(e)}")
+            
+            def on_error(error):
+                try:
+                    self.ventana.config(cursor="")
+                except:
+                    pass
+                messagebox.showerror("Error", f"Error al reimprimir:\n{str(error)}")
+            
+            from modules.utils import ejecutar_en_hilo
+            ejecutar_en_hilo(self.ventana, operacion_pesada, on_exito, on_error)
         
         elif selection_cuota:
             # Verificar si la cuota está pagada
@@ -2091,27 +2135,40 @@ class VentanaHistorial:
                 messagebox.showwarning("Advertencia", "Solo se pueden reimprimir recibos de cuotas pagadas.\nEsta cuota aún está pendiente.")
                 return
             
+            # Cambiar cursor a espera
             try:
-                # Obtener el recibo de la cuota pagada
+                self.ventana.config(cursor="wait")
+                self.ventana.update_idletasks()
+            except:
+                pass
+            
+            def operacion_pesada_cuota():
                 from modules.cuotas import obtener_recibo_por_cuota_campesino
                 from modules.reports import generar_recibo_cuota_pdf
                 
                 recibo = obtener_recibo_por_cuota_campesino(cuota_id)
-                
                 if not recibo:
-                    messagebox.showerror("Error", "No se encontró el recibo para esta cuota.")
-                    return
+                    raise ValueError("No se encontró el recibo para esta cuota.")
                 
-                # Generar recibo de cuota (sin leyenda de reimpresión)
-                pdf_path = generar_recibo_cuota_pdf(recibo['id'])
-                
-                # Abrir archivo automáticamente
+                return generar_recibo_cuota_pdf(recibo['id'])
+            
+            def on_exito_cuota(pdf_path):
+                try:
+                    self.ventana.config(cursor="")
+                except:
+                    pass
                 abrir_pdf(pdf_path)
-                
                 messagebox.showinfo("Éxito", "Recibo de cuota abierto correctamente.")
-                
-            except Exception as e:
-                messagebox.showerror("Error", f"Error al reimprimir recibo de cuota:\n{str(e)}")
+            
+            def on_error_cuota(error):
+                try:
+                    self.ventana.config(cursor="")
+                except:
+                    pass
+                messagebox.showerror("Error", f"Error al reimprimir recibo de cuota:\n{str(error)}")
+            
+            from modules.utils import ejecutar_en_hilo
+            ejecutar_en_hilo(self.ventana, operacion_pesada_cuota, on_exito_cuota, on_error_cuota)
         
         else:
             messagebox.showwarning("Advertencia", "Debe seleccionar un recibo o una cuota pagada")
@@ -2933,58 +2990,91 @@ class VentanaPagoCuota:
         ttk.Button(btn_frame, text="❌ Cancelar", command=self.ventana.destroy).pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
         
     def registrar_pago(self):
+        """Registra pago - CON THREADING para no congelar UI"""
         # PARCHE: Prevenir doble clic
         if hasattr(self, '_procesando') and self._procesando:
             return
-        self._procesando = True
-        self.btn_pago.config(state='disabled')
         
+        # Validar monto ANTES de iniciar proceso
         try:
             monto = float(self.entry_abono.get())
             if monto <= 0:
                 messagebox.showwarning("Error", "El monto debe ser mayor a 0")
-                self._procesando = False
-                self.btn_pago.config(state='normal')
                 return
                 
             if monto > self.saldo_pendiente + 0.01:
                 messagebox.showwarning("Error", f"El monto excede el saldo pendiente (${self.saldo_pendiente:.2f})")
-                self._procesando = False
-                self.btn_pago.config(state='normal')
                 return
-                
-            if messagebox.askyesno("Confirmar", f"¿Registrar abono de ${monto:.2f}?"):
-                from modules.cuotas import registrar_abono
-                from modules.reports import generar_recibo_cuota_pdf, abrir_pdf
-                import os # Import os for file operations
-                
-                resultado = registrar_abono(self.cuota_id, monto)
-                
-                if resultado['pagado_completo']:
-                    messagebox.showinfo("¡Pago Completado!", 
-                                      "Se ha cubierto el total de la cuota.\nGenerando recibo...")
-                    
-                    if resultado['recibo']:
-                        # Generar recibo permanente
-                        pdf_path = generar_recibo_cuota_pdf(resultado['recibo']['recibo_id'])
-                        
-                        # Abrir archivo automáticamente
-                        abrir_pdf(pdf_path)
-                        
-                        messagebox.showinfo("Éxito", "Recibo de cuota abierto correctamente.")
-                else:
-                    saldo = resultado['saldo_restante']
-                    messagebox.showinfo("Abono Registrado", 
-                                      f"Abono registrado correctamente.\nSaldo restante: ${saldo:.2f}\n\n"
-                                      "Recuerde: El recibo se generará al cubrir el total.")
-                
-                self.ventana_padre.cargar_historial()
-                self.ventana.destroy()
-                
         except ValueError:
             messagebox.showerror("Error", "Ingrese un monto válido")
-        except Exception as e:
-            messagebox.showerror("Error", f"Error al registrar pago: {e}")
+            return
+        
+        if not messagebox.askyesno("Confirmar", f"¿Registrar abono de ${monto:.2f}?"):
+            return
+        
+        self._procesando = True
+        self.btn_pago.config(state='disabled')
+        
+        # Cambiar cursor a espera
+        try:
+            self.ventana.config(cursor="wait")
+            self.ventana.update_idletasks()
+        except:
+            pass
+        
+        # Capturar valores
+        cuota_id = self.cuota_id
+        
+        def operacion_pesada():
+            from modules.cuotas import registrar_abono
+            from modules.reports import generar_recibo_cuota_pdf
+            
+            resultado = registrar_abono(cuota_id, monto)
+            pdf_path = None
+            
+            if resultado['pagado_completo'] and resultado['recibo']:
+                # Generar recibo permanente (operación pesada)
+                pdf_path = generar_recibo_cuota_pdf(resultado['recibo']['recibo_id'])
+            
+            return {'resultado': resultado, 'pdf_path': pdf_path}
+        
+        def on_exito(datos):
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
+            
+            resultado = datos['resultado']
+            pdf_path = datos['pdf_path']
+            
+            if resultado['pagado_completo']:
+                messagebox.showinfo("¡Pago Completado!", 
+                                  "Se ha cubierto el total de la cuota.\nGenerando recibo...")
+                
+                if pdf_path:
+                    abrir_pdf(pdf_path)
+                    messagebox.showinfo("Éxito", "Recibo de cuota abierto correctamente.")
+            else:
+                saldo = resultado['saldo_restante']
+                messagebox.showinfo("Abono Registrado", 
+                                  f"Abono registrado correctamente.\nSaldo restante: ${saldo:.2f}\n\n"
+                                  "Recuerde: El recibo se generará al cubrir el total.")
+            
+            self.ventana_padre.cargar_historial()
+            self.ventana.destroy()
+        
+        def on_error(error):
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
+            
+            self._procesando = False
+            self.btn_pago.config(state='normal')
+            messagebox.showerror("Error", f"Error al registrar pago: {error}")
+        
+        from modules.utils import ejecutar_en_hilo
+        ejecutar_en_hilo(self.ventana, operacion_pesada, on_exito, on_error)
 
 
 class VentanaEditarLote:
