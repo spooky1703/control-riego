@@ -1648,7 +1648,7 @@ class VentanaDetalleDia:
                 messagebox.showerror("Error", f"Error al eliminar recibo:\n{str(e)}")
 
     def reimprimir_recibo(self):
-        """Reimprime el recibo seleccionado - RECIBOS TEMPORALES"""
+        """Reimprime el recibo seleccionado - CON THREADING"""
         selection = self.tree.selection()
         if not selection:
             messagebox.showwarning("Advertencia", "Debe seleccionar un recibo")
@@ -1656,33 +1656,66 @@ class VentanaDetalleDia:
         
         item = self.tree.item(selection[0])
         recibo_id = int(item['tags'][0])
+        
         try:
-            # Generar recibo permanente (reimpresión)
-            pdf_path = generar_recibo_pdf(recibo_id, es_reimpresion=True)
-            
-            # Abrir archivo automáticamente
+            self.ventana.config(cursor="wait")
+            self.ventana.update_idletasks()
+        except:
+            pass
+        
+        def operacion_pesada():
+            return generar_recibo_pdf(recibo_id, es_reimpresion=True)
+        
+        def on_exito(pdf_path):
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
             abrir_pdf(pdf_path)
-            
             messagebox.showinfo("Éxito", "Recibo abierto correctamente.")
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Error al reimprimir:\n{str(e)}")
+        
+        def on_error(error):
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
+            messagebox.showerror("Error", f"Error al reimprimir:\n{str(error)}")
+        
+        from modules.utils import ejecutar_en_hilo
+        ejecutar_en_hilo(self.ventana, operacion_pesada, on_exito, on_error)
     
     def exportar_cuotas_dia(self):
-        """Exporta reporte de cuotas cobradas hoy"""
+        """Exporta reporte de cuotas cobradas hoy - CON THREADING"""
         try:
+            self.ventana.config(cursor="wait")
+            self.ventana.update_idletasks()
+        except:
+            pass
+        
+        def operacion_pesada():
             from modules.reports import generar_reporte_cuotas_dia_pdf
-            
-            pdf_path = generar_reporte_cuotas_dia_pdf()
-            
+            return generar_reporte_cuotas_dia_pdf()
+        
+        def on_exito(pdf_path):
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
             from modules.reports import abrir_pdf
             abrir_pdf(pdf_path)
-            
             messagebox.showinfo("Éxito", 
                                 f"Reporte de cuotas del día generado correctamente\n"
                                 f"Ruta: {pdf_path}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Error al generar reporte de cuotas:\n{str(e)}")
+        
+        def on_error(error):
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
+            messagebox.showerror("Error", f"Error al generar reporte de cuotas:\n{str(error)}")
+        
+        from modules.utils import ejecutar_en_hilo
+        ejecutar_en_hilo(self.ventana, operacion_pesada, on_exito, on_error)
 
     
     def exportarexcel(self):
@@ -2621,40 +2654,53 @@ class VentanaEstadisticas:
         VentanaEstadisticas(self.ventana.master)
 
     def exportar_pdf(self):
-        """Exporta estadísticas a PDF profesional"""
+        """Exporta estadísticas a PDF profesional - CON THREADING"""
         try:
-            from modules.reports import generar_pdf_estadisticas  # CON GUIONES BAJOS
+            self.ventana.config(cursor="wait")
+            self.ventana.update_idletasks()
+        except:
+            pass
+        
+        def operacion_pesada():
+            from modules.reports import generar_pdf_estadisticas
             from modules.models import obtener_estadisticas_generales
             
-            # Obtener estadísticas generales
             estadisticas = obtener_estadisticas_generales()
             
-            # Construir lista de estadísticas por cultivo desde los datos que ya tenemos
             estadisticas_cultivo = []
             for cultivo in estadisticas['hectareas_por_cultivo'].keys():
                 estadisticas_cultivo.append({
                     'cultivo': cultivo,
                     'num_siembras': estadisticas['siembras_por_cultivo'].get(cultivo, 0),
                     'superficie_total': estadisticas['hectareas_por_cultivo'].get(cultivo, 0),
-                    'num_recibos': 0,  # No tenemos este dato fácilmente
-                    'ingresos_totales': 0  # No tenemos este dato fácilmente
+                    'num_recibos': 0,
+                    'ingresos_totales': 0
                 })
             
-            # Generar PDF con diseño profesional
-            ruta_pdf = generar_pdf_estadisticas(estadisticas, estadisticas_cultivo)
-            
+            return generar_pdf_estadisticas(estadisticas, estadisticas_cultivo)
+        
+        def on_exito(ruta_pdf):
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
+            from modules.reports import abrir_pdf
+            abrir_pdf(ruta_pdf)
             messagebox.showinfo("Éxito", 
                 f"PDF generado correctamente\n\n"
                 f"Archivo: {os.path.basename(ruta_pdf)}")
-            
-            # Abrir automáticamente el PDF
-            from modules.reports import abrir_pdf
-            abrir_pdf(ruta_pdf)
-            
-        except Exception as e:
+        
+        def on_error(error):
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
             import traceback
-            print(traceback.format_exc())
-            messagebox.showerror("Error", f"Error al generar PDF:\n{str(e)}")
+            traceback.print_exc()
+            messagebox.showerror("Error", f"Error al generar PDF:\n{str(error)}")
+        
+        from modules.utils import ejecutar_en_hilo
+        ejecutar_en_hilo(self.ventana, operacion_pesada, on_exito, on_error)
 
 ####
 class VentanaRenombrarCampesino:
@@ -3478,68 +3524,100 @@ class VentanaGestorReportes:
 
     
     def generar_nuevo_reporte(self):
-        """Genera un reporte del día actual"""
+        """Genera un reporte del día actual - CON THREADING"""
+        from modules.logic import calcular_total_dia
+        
+        recibos = obtener_recibos_dia(self.fecha_actual)
+        
+        if not recibos:
+            messagebox.showwarning("Sin datos", 
+                                  "No hay recibos para el día actual.\n"
+                                  "No se puede generar el reporte.")
+            return
+        
         try:
-            from modules.logic import calcular_total_dia
+            self.ventana.config(cursor="wait")
+            self.ventana.update_idletasks()
+        except:
+            pass
+        
+        fecha = self.fecha_actual
+        recibos_copia = recibos
+        
+        def operacion_pesada():
             from modules.reports import generar_reporte_diario
-            
-            recibos = obtener_recibos_dia(self.fecha_actual)
-            
-            if not recibos:
-                messagebox.showwarning("Sin datos", 
-                                      "No hay recibos para el día actual.\n"
-                                      "No se puede generar el reporte.")
-                return
-            
-            # Generar reporte
-            ruta_pdf = generar_reporte_diario(self.fecha_actual, recibos)
-            
-            messagebox.showinfo("Éxito", 
-                              f"Reporte generado correctamente\n\n"
-                              f"Recibos: {len(recibos)}\n"
-                              f"Total: ${calcular_total_dia(self.fecha_actual):,.2f}")
-            
-            # Recargar lista
-            self.cargar_reportes()
-            
-            # Abrir automáticamente
+            return generar_reporte_diario(fecha, recibos_copia)
+        
+        def on_exito(ruta_pdf):
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
             from modules.reports import abrir_pdf
             abrir_pdf(ruta_pdf)
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Error al generar reporte:\n{str(e)}")
+            messagebox.showinfo("Éxito", 
+                              f"Reporte generado correctamente\n\n"
+                              f"Recibos: {len(recibos_copia)}\n"
+                              f"Total: ${calcular_total_dia(fecha):,.2f}")
+            self.cargar_reportes()
+        
+        def on_error(error):
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
+            messagebox.showerror("Error", f"Error al generar reporte:\n{str(error)}")
+        
+        from modules.utils import ejecutar_en_hilo
+        ejecutar_en_hilo(self.ventana, operacion_pesada, on_exito, on_error)
     
     def generar_corte_caja(self):
-        """Genera corte de caja en Excel"""
+        """Genera corte de caja en Excel - CON THREADING"""
+        from modules.logic import calcular_total_dia
+        
+        recibos = obtener_recibos_dia(self.fecha_actual)
+        
+        if not recibos:
+            messagebox.showwarning("Sin datos", 
+                                "No hay recibos para el día actual.\n"
+                                "No se puede generar el corte de caja.")
+            return
+        
         try:
-            from modules.logic import calcular_total_dia
+            self.ventana.config(cursor="wait")
+            self.ventana.update_idletasks()
+        except:
+            pass
+        
+        fecha = self.fecha_actual
+        recibos_copia = recibos
+        
+        def operacion_pesada():
             from modules.reports import generar_corte_caja_excel
-            
-            recibos = obtener_recibos_dia(self.fecha_actual)
-            
-            if not recibos:
-                messagebox.showwarning("Sin datos", 
-                                    "No hay recibos para el día actual.\n"
-                                    "No se puede generar el corte de caja.")
-                return
-            
-            # Generar Excel
-            ruta_excel = generar_corte_caja_excel(self.fecha_actual, recibos)
-            
+            return generar_corte_caja_excel(fecha, recibos_copia)
+        
+        def on_exito(ruta_excel):
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
             messagebox.showinfo("Éxito", 
                             f"Corte de caja generado correctamente\n\n"
-                            f"Recibos: {len(recibos)}\n"
-                            f"Total: ${calcular_total_dia(self.fecha_actual):,.2f}\n\n"
+                            f"Recibos: {len(recibos_copia)}\n"
+                            f"Total: ${calcular_total_dia(fecha):,.2f}\n\n"
                             f"Archivo: {os.path.basename(ruta_excel)}")
-            
-            # Recargar lista
             self.cargar_reportes()
-            
-            # Abrir automáticamente
             self.abrir_archivo(ruta_excel)
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Error al generar corte de caja:\n{str(e)}")
+        
+        def on_error(error):
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
+            messagebox.showerror("Error", f"Error al generar corte de caja:\n{str(error)}")
+        
+        from modules.utils import ejecutar_en_hilo
+        ejecutar_en_hilo(self.ventana, operacion_pesada, on_exito, on_error)
 
     def abrir_reporte(self):
         """Abre el archivo seleccionado (PDF o Excel)"""
@@ -3563,10 +3641,10 @@ class VentanaGestorReportes:
                 os.startfile(ruta)
             elif platform.system() == 'Darwin':  # macOS
                 import subprocess
-                subprocess.run(['open', ruta])
+                subprocess.Popen(['open', ruta])
             else:  # Linux
                 import subprocess
-                subprocess.run(['xdg-open', ruta])
+                subprocess.Popen(['xdg-open', ruta])
         except Exception as e:
             raise Exception(f"No se pudo abrir el archivo: {str(e)}")
 
@@ -3615,31 +3693,48 @@ class VentanaGestorReportes:
             if platform.system() == 'Windows':
                 os.startfile(reportes_dir)
             elif platform.system() == 'Darwin':  # macOS
-                subprocess.run(['open', reportes_dir])
+                subprocess.Popen(['open', reportes_dir])
             else:  # Linux
-                subprocess.run(['xdg-open', reportes_dir])
+                subprocess.Popen(['xdg-open', reportes_dir])
         except Exception as e:
             messagebox.showerror("Error", f"Error al abrir carpeta:\n{str(e)}")
 
     def generar_reporte_cuotas_dia(self):
-        """Genera reporte PDF de cuotas cobradas hoy"""
+        """Genera reporte PDF de cuotas cobradas hoy - CON THREADING"""
         try:
-            from modules.reports import generar_reporte_cuotas_dia_pdf, abrir_pdf
-            
-            pdf_path = generar_reporte_cuotas_dia_pdf()
+            self.ventana.config(cursor="wait")
+            self.ventana.update_idletasks()
+        except:
+            pass
+        
+        def operacion_pesada():
+            from modules.reports import generar_reporte_cuotas_dia_pdf
+            return generar_reporte_cuotas_dia_pdf()
+        
+        def on_exito(pdf_path):
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
+            from modules.reports import abrir_pdf
             abrir_pdf(pdf_path)
-            
             messagebox.showinfo("Éxito", 
                                 f"Reporte de cuotas generado correctamente\n"
                                 f"Ruta: {pdf_path}")
-            
-            # Recargar lista de reportes
             self.cargar_reportes()
-            
-        except ValueError as e:
-            messagebox.showwarning("Sin Datos", str(e))
-        except Exception as e:
-            messagebox.showerror("Error", f"Error al generar reporte de cuotas:\n{str(e)}")
+        
+        def on_error(error):
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
+            if isinstance(error, ValueError):
+                messagebox.showwarning("Sin Datos", str(error))
+            else:
+                messagebox.showerror("Error", f"Error al generar reporte de cuotas:\n{str(error)}")
+        
+        from modules.utils import ejecutar_en_hilo
+        ejecutar_en_hilo(self.ventana, operacion_pesada, on_exito, on_error)
 
     def exportar_cuotas_excel(self):
         """Exporta cuotas del día a Excel"""
@@ -4328,10 +4423,19 @@ class VentanaDetalleCuota:
         # Confirmar pago
         if messagebox.askyesno("Confirmar Pago", 
                                "¿Marcar esta cuota como PAGADA y generar recibo?"):
+            
             try:
+                self.ventana.config(cursor="wait")
+                self.ventana.update_idletasks()
+            except:
+                pass
+            
+            cid = cuota_campesino_id
+            
+            def operacion_pesada():
                 from modules.cuotas import pagar_cuota, get_cuotas_connection, calcular_sobrecargo_acumulado
+                from modules.reports import generar_recibo_cuota_pdf
                 
-                # Obtener sobrecargo desde la base de datos
                 conn = get_cuotas_connection()
                 cursor = conn.cursor()
                 cursor.execute("""
@@ -4339,7 +4443,7 @@ class VentanaDetalleCuota:
                     FROM cuotas_campesinos cc
                     JOIN tipos_cuota tc ON cc.tipo_cuota_id = tc.id
                     WHERE cc.id = ?
-                """, (cuota_campesino_id,))
+                """, (cid,))
                 row = cursor.fetchone()
                 conn.close()
                 
@@ -4347,55 +4451,82 @@ class VentanaDetalleCuota:
                 if row and row['sobrecargo_habilitado']:
                     sobrecargo = calcular_sobrecargo_acumulado(row['fecha_asignacion'])
                 
-                resultado = pagar_cuota(cuota_campesino_id, sobrecargo=sobrecargo)
-                
-                # Generar y mostrar recibo
-                from modules.reports import generar_recibo_cuota_pdf_temporal, abrir_pdf
-                # Generar recibo permanente y abrirlo
-                from modules.reports import generar_recibo_cuota_pdf, abrir_pdf
+                resultado = pagar_cuota(cid, sobrecargo=sobrecargo)
                 
                 recibo_id = resultado['recibo_id']
                 pdf_path = generar_recibo_cuota_pdf(recibo_id)
                 
-                # Abrir archivo automáticamente
+                return pdf_path
+            
+            def on_exito(pdf_path):
+                try:
+                    self.ventana.config(cursor="")
+                except:
+                    pass
+                from modules.reports import abrir_pdf
                 abrir_pdf(pdf_path)
-                
-                
                 messagebox.showinfo("Éxito", "Cuota pagada correctamente")
                 self.cargar_detalle()
                 self.ventana_gestionar.cargar_tipos_cuota()
-                
-            except Exception as e:
-                messagebox.showerror("Error", f"Error al pagar cuota:\n{str(e)}")
+            
+            def on_error(error):
+                try:
+                    self.ventana.config(cursor="")
+                except:
+                    pass
+                messagebox.showerror("Error", f"Error al pagar cuota:\n{str(error)}")
+            
+            from modules.utils import ejecutar_en_hilo
+            ejecutar_en_hilo(self.ventana, operacion_pesada, on_exito, on_error)
     
     def asignar_a_campesino(self):
         """Abre ventana para asignar esta cuota a un campesino"""
         VentanaAsignarCuota(self.ventana, self.tipo_cuota_id, self)
     
     def exportar_pdf(self):
-        """Exporta reporte PDF de la recaudación de esta cuota"""
+        """Exporta reporte PDF de la recaudación de esta cuota - CON THREADING"""
         try:
+            self.ventana.config(cursor="wait")
+            self.ventana.update_idletasks()
+        except:
+            pass
+        
+        tipo_cuota_id = self.tipo_cuota_id
+        
+        def operacion_pesada():
             from modules.reports import generar_reporte_cuota_pdf
             from modules.cuotas import get_cuotas_connection
             
-            # Obtener nombre de la cuota
             conn = get_cuotas_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT nombre FROM tipos_cuota WHERE id = ?", (self.tipo_cuota_id,))
+            cursor.execute("SELECT nombre FROM tipos_cuota WHERE id = ?", (tipo_cuota_id,))
             row = cursor.fetchone()
             nombre_cuota = row['nombre'] if row else "Cuota"
             conn.close()
             
-            pdf_path = generar_reporte_cuota_pdf(self.tipo_cuota_id)
-            
+            pdf_path = generar_reporte_cuota_pdf(tipo_cuota_id)
+            return {'pdf_path': pdf_path, 'nombre_cuota': nombre_cuota}
+        
+        def on_exito(datos):
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
             from modules.reports import abrir_pdf
-            abrir_pdf(pdf_path)
-            
+            abrir_pdf(datos['pdf_path'])
             messagebox.showinfo("Éxito", 
-                                f"Reporte de '{nombre_cuota}' generado correctamente\n"
-                                f"Ruta: {pdf_path}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Error al generar reporte:\n{str(e)}")
+                                f"Reporte de '{datos['nombre_cuota']}' generado correctamente\n"
+                                f"Ruta: {datos['pdf_path']}")
+        
+        def on_error(error):
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
+            messagebox.showerror("Error", f"Error al generar reporte:\n{str(error)}")
+        
+        from modules.utils import ejecutar_en_hilo
+        ejecutar_en_hilo(self.ventana, operacion_pesada, on_exito, on_error)
 
 
 class VentanaAsignarCuota:
@@ -4647,16 +4778,34 @@ class VentanaReporteCuotas:
                             ))
     
     def exportar_pdf_completo(self):
+        """Exporta reporte general de todas las cuotas - CON THREADING"""
         try:
+            self.ventana.config(cursor="wait")
+            self.ventana.update_idletasks()
+        except:
+            pass
+        
+        def operacion_pesada():
             from modules.reports import generar_reporte_todas_cuotas_pdf
-            
-            pdf_path = generar_reporte_todas_cuotas_pdf()
-            
+            return generar_reporte_todas_cuotas_pdf()
+        
+        def on_exito(pdf_path):
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
             from modules.reports import abrir_pdf
             abrir_pdf(pdf_path)
-            
             messagebox.showinfo("Éxito", 
                                 f"Reporte general generado correctamente\n"
                                 f"Ruta: {pdf_path}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Error al generar reporte:\n{str(e)}")
+        
+        def on_error(error):
+            try:
+                self.ventana.config(cursor="")
+            except:
+                pass
+            messagebox.showerror("Error", f"Error al generar reporte:\n{str(error)}")
+        
+        from modules.utils import ejecutar_en_hilo
+        ejecutar_en_hilo(self.ventana, operacion_pesada, on_exito, on_error)

@@ -682,11 +682,12 @@ def cambiar_cultivo_siembra(campesino_id: int, nuevo_cultivo: str, justificacion
 
 # ==================== GESTIÓN MANUAL DE DATOS ====================
 
-def crear_siembra_manual(campesino_id: int, cultivo: str, ciclo: str, fecha_inicio: str) -> int:
+def crear_siembra_manual(campesino_id: int, cultivo: str, ciclo: str, fecha_inicio: str = None) -> int:
 
     """Crea una siembra manualmente."""
 
-    return crear_siembra(campesino_id, cultivo, ciclo, fecha_inicio)
+    # crear_siembra solo acepta 3 parámetros (usa date('now') internamente)
+    return crear_siembra(campesino_id, cultivo, ciclo)
 
 def crear_riego_manual(campesino_id: int, siembra_id: int, folio: int, fecha: str, hora: str, tipo_accion: str, costo: float) -> int:
 

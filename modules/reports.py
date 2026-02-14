@@ -84,18 +84,8 @@ def _imprimir_pdf_windows(ruta_pdf: str, impresora: str | None = None) -> None:
     try:
         os.startfile(ruta_pdf)
         print(f"⚠ PDF abierto para impresión manual: {ruta_pdf}")
-        # Mostrar mensaje al usuario
-        import tkinter as tk
-        from tkinter import messagebox
-        root = tk.Tk()
-        root.withdraw()
-        messagebox.showinfo(
-            "Impresión Manual", 
-            "El PDF se ha abierto.\n\n"
-            "Por favor, presiona Ctrl+P para imprimir manualmente.\n\n"
-            "Recomendación: Instala SumatraPDF para impresión automática."
-        )
-        root.destroy()
+        print("  → Por favor, presiona Ctrl+P para imprimir manualmente.")
+        print("  → Recomendación: Instala SumatraPDF para impresión automática.")
         return
     except Exception as e:
         raise RuntimeError(
@@ -624,7 +614,7 @@ def obtener_impresoras_disponibles() -> List[str]:
 # ==================== ABRIR PDF ====================
 
 def abrir_pdf(ruta_pdf: str):
-    """Abre el PDF con el visor predeterminado del sistema"""
+    """Abre el PDF con el visor predeterminado del sistema (NO BLOQUEANTE)"""
     if not os.path.exists(ruta_pdf):
         raise FileNotFoundError(f"Archivo no encontrado: {ruta_pdf}")
 
@@ -632,11 +622,11 @@ def abrir_pdf(ruta_pdf: str):
 
     try:
         if sistema == 'Windows':
-            os.startfile(ruta_pdf)  # depende de asociación, solo para ver
+            os.startfile(ruta_pdf)  # ya es no bloqueante en Windows
         elif sistema == 'Darwin':
-            subprocess.run(['open', ruta_pdf])
+            subprocess.Popen(['open', ruta_pdf])  # Popen no bloquea el hilo
         else:
-            subprocess.run(['xdg-open', ruta_pdf])
+            subprocess.Popen(['xdg-open', ruta_pdf])  # Popen no bloquea el hilo
         return True
     except Exception as e:
         print(f"Error al abrir PDF: {e}")

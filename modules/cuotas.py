@@ -12,9 +12,9 @@ CUOTAS_DB_PATH = os.path.join('database', 'cuotas.db')
 def get_cuotas_connection():
     """Obtiene una conexión a la base de datos de cuotas"""
     os.makedirs('database', exist_ok=True)
-    conn = sqlite3.connect(CUOTAS_DB_PATH, timeout=10.0)
+    conn = sqlite3.connect(CUOTAS_DB_PATH, timeout=10.0, check_same_thread=False)  # Thread-safe
     conn.row_factory = sqlite3.Row
-    conn.isolation_level = None
+    # Usar transacciones explícitas (default DEFERRED) para que rollback() funcione
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA busy_timeout = 10000")
     conn.execute("PRAGMA synchronous = NORMAL")
@@ -261,7 +261,11 @@ def asignar_cuota_masiva(tipo_cuota_id: int, campesinos_lista: List[Dict]) -> in
                 monto
             ))
             total_asignados += 1
-        except:
+        except sqlite3.IntegrityError:
+            # Duplicado: campesino ya tiene esta cuota asignada
+            continue
+        except Exception as e:
+            print(f"Error asignando cuota a {campesino.get('nombre', '?')}: {e}")
             continue
     
     conn.commit()
@@ -486,15 +490,35 @@ def pagar_cuota(cuota_campesino_id: int, sobrecargo: float = 0.0) -> Dict:
     conn = get_cuotas_connection()
     cursor = conn.cursor()
     
-    # Obtener saldo pendiente
+    # Obtener saldo pendiente (SIN sumar sobrecargo aquí, porque registrar_abono lo calcula internamente)
     cursor.execute('SELECT monto, monto_pagado FROM cuotas_campesinos WHERE id = ?', (cuota_campesino_id,))
     row = cursor.fetchone()
     conn.close()
     
     if not row:
         raise ValueError("Cuota no encontrada")
-        
-    saldo = (row['monto'] + sobrecargo) - row['monto_pagado']
+    
+    # registrar_abono ya calcula el sobrecargo internamente,
+    # así que necesitamos pasar el saldo exacto que registrar_abono espera recibir.
+    # registrar_abono calcula: monto_total = cuota.monto + sobrecargo
+    # y luego: saldo_pendiente = monto_total - monto_pagado
+    # Así que le pasamos exactamente ese saldo_pendiente para que coincida.
+    conn2 = get_cuotas_connection()
+    cur2 = conn2.cursor()
+    cur2.execute('''
+        SELECT cc.fecha_asignacion, tc.sobrecargo_habilitado
+        FROM cuotas_campesinos cc
+        JOIN tipos_cuota tc ON cc.tipo_cuota_id = tc.id
+        WHERE cc.id = ?
+    ''', (cuota_campesino_id,))
+    info = cur2.fetchone()
+    conn2.close()
+    
+    sobrecargo_real = 0.0
+    if info and info['sobrecargo_habilitado']:
+        sobrecargo_real = calcular_sobrecargo_acumulado(info['fecha_asignacion'])
+    
+    saldo = (row['monto'] + sobrecargo_real) - row['monto_pagado']
     
     # Llamar a registrar_abono con el saldo total
     resultado = registrar_abono(cuota_campesino_id, saldo)

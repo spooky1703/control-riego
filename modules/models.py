@@ -15,11 +15,10 @@ def get_connection():
     os.makedirs('database', exist_ok=True)
     
     # Crear conexión con timeout más alto y modo journal
-    conn = sqlite3.connect(DB_PATH, timeout=10.0)  # 10 segundos de timeout
+    conn = sqlite3.connect(DB_PATH, timeout=10.0, check_same_thread=False)  # Thread-safe
     conn.row_factory = sqlite3.Row
     
-    # Configurar para evitar bloqueos
-    conn.isolation_level = None  # Autocommit mode para mejor concurrencia
+    # Usar transacciones explícitas (default DEFERRED) para que rollback() funcione
     conn.execute("PRAGMA journal_mode = WAL")  # Write-Ahead Logging
     conn.execute("PRAGMA busy_timeout = 10000")  # 10 segundos en modo busy
     conn.execute("PRAGMA synchronous = NORMAL")  # Mejor rendimiento
@@ -565,6 +564,9 @@ def eliminar_recibo(recibo_id: int, motivo: str = ""):
     conn = get_connection()
     cursor = conn.cursor()
     recibo = obtener_recibo_por_id(recibo_id)
+    if not recibo:
+        conn.close()
+        raise ValueError("Recibo no encontrado")
     cursor.execute('''
         UPDATE recibos 
         SET eliminado = 1, 
@@ -808,11 +810,11 @@ def obtener_estadisticas_generales() -> Dict:
     cursor = conn.cursor()
     
     # Total de campesinos
-    cursor.execute("SELECT COUNT(*) FROM campesinos")
+    cursor.execute("SELECT COUNT(*) FROM campesinos WHERE activo = 1")
     total_campesinos = cursor.fetchone()[0]
     
     # Total de hectáreas
-    cursor.execute("SELECT SUM(superficie) FROM campesinos")
+    cursor.execute("SELECT SUM(superficie) FROM campesinos WHERE activo = 1")
     total_hectareas = cursor.fetchone()[0] or 0
     
     # Hectáreas sembradas (con siembra activa)
@@ -853,7 +855,7 @@ def obtener_estadisticas_generales() -> Dict:
         SELECT COUNT(*) 
         FROM campesinos c
         LEFT JOIN siembras s ON c.id = s.campesino_id AND s.activa = 1
-        WHERE s.id IS NULL
+        WHERE s.id IS NULL AND c.activo = 1
     """)
     campesinos_sin_siembra = cursor.fetchone()[0]
     
@@ -942,10 +944,12 @@ def partir_lote(campesino_id: int, num_divisiones: int, superficies: List[float]
     try:
         # Obtener datos del campesino original
         cursor.execute("SELECT * FROM campesinos WHERE id = ?", (campesino_id,))
-        original = dict(cursor.fetchone())
+        row = cursor.fetchone()
         
-        if not original:
+        if not row:
             raise ValueError("Campesino no encontrado")
+        
+        original = dict(row)
         
         # Validar que la suma de superficies sea igual a la original
         superficie_total = sum(superficies)
@@ -999,7 +1003,7 @@ def partir_lote(campesino_id: int, num_divisiones: int, superficies: List[float]
             'LOTE_PARTIDO',
             f"Lote {lote_base} partido en {num_divisiones + 1} sublotes. "
             f"Superficies: {', '.join([f'{s:.4f}' for s in superficies])} ha",
-            campesino_id
+            json.dumps({'campesino_id': campesino_id, 'lote': lote_base})
         )
         
         # ✅ SINCRONIZAR CON CUOTAS.DB (Actualizar superficie del original)
@@ -1054,7 +1058,7 @@ def renombrar_campesino(campesino_id: int, nuevo_nombre: str) -> bool:
         registrar_auditoria(
             'CAMPESINO_RENOMBRADO',
             f"Lote {numero_lote}: '{nombre_anterior}' → '{nuevo_nombre}'",
-            campesino_id
+            json.dumps({'campesino_id': campesino_id, 'nombre_anterior': nombre_anterior})
         )
         
         # ✅ SINCRONIZAR CON CUOTAS.DB
@@ -1110,7 +1114,7 @@ def actualizar_superficie_campesino(campesino_id: int, nueva_superficie: float) 
         registrar_auditoria(
             'SUPERFICIE_ACTUALIZADA',
             f"Lote {numero_lote} ({nombre}): {superficie_anterior} ha → {nueva_superficie} ha",
-            campesino_id
+            json.dumps({'campesino_id': campesino_id, 'superficie_anterior': superficie_anterior})
         )
         
         # ✅ SINCRONIZAR CON CUOTAS.DB
