@@ -78,7 +78,6 @@ def load_svg_icon(svg_filename, size=32):
     
     # Convertir nombre de SVG a PNG
     png_filename = svg_filename.replace('.svg', '.png')
-    png_filename = svg_filename.replace('.svg', '.png')
     png_path = resource_path(os.path.join('assets', png_filename))
     
     if not os.path.exists(png_path):
@@ -4298,55 +4297,55 @@ class VentanaDetalleCuota:
     def cargar_detalle(self):
         """Carga el detalle de la cuota"""
         from modules.cuotas import obtener_resumen_cuota, obtener_tipos_cuota_activos, calcular_sobrecargo_acumulado
-        from modules.models import get_connection as get_riego_connection
         
         # Obtener nombre de la cuota
         from modules.cuotas import get_cuotas_connection
         conn = get_cuotas_connection()
         cursor = conn.cursor()
         
-        # Obtener datos del tipo de cuota
-        cursor.execute("""
-            SELECT * FROM tipos_cuota WHERE id = ?
-        """, (self.tipo_cuota_id,))
-        
-        row = cursor.fetchone()
-        if not row:
-            conn.close()
-            return
-        
-        nombre_cuota = row['nombre']
-        monto_cuota = row['monto']
-        
-        # Cargar estado del sobrecargo (con manejo de error si la columna no existe)
         try:
-            sobrecargo_habilitado = row['sobrecargo_habilitado']
-        except (KeyError, IndexError):
-            sobrecargo_habilitado = 0
-        
-        self.var_sobrecargo.set(bool(sobrecargo_habilitado))
-        
-        self.label_titulo.config(text=f"Cuota: {nombre_cuota} (${monto_cuota:.2f})")
-        
-        # Obtener resumen
-        resumen = obtener_resumen_cuota(self.tipo_cuota_id)
-        
-        texto_resumen = (
-            f"Total Asignados: {resumen['total_asignados']}\n"
-            f"Total Pagados: {resumen['total_pagados']} | Monto Recaudado: ${resumen['monto_recaudado']:.2f}\n"
-            f"Total Pendientes: {resumen['total_pendientes']} | Monto Pendiente: ${resumen['monto_pendiente']:.2f}"
-        )
-        self.label_resumen.config(text=texto_resumen.strip())
-        
-        # Cargar campesinos
-        cursor.execute("""
-            SELECT * FROM cuotas_campesinos
-            WHERE tipo_cuota_id = ?
-            ORDER BY pagado ASC, numero_lote ASC
-        """, (self.tipo_cuota_id,))
-        
-        cuotas_campesinos = [dict(row) for row in cursor.fetchall()]
-        conn.close()
+            # Obtener datos del tipo de cuota
+            cursor.execute("""
+                SELECT * FROM tipos_cuota WHERE id = ?
+            """, (self.tipo_cuota_id,))
+            
+            row = cursor.fetchone()
+            if not row:
+                return
+            
+            nombre_cuota = row['nombre']
+            monto_cuota = row['monto']
+            
+            # Cargar estado del sobrecargo (con manejo de error si la columna no existe)
+            try:
+                sobrecargo_habilitado = row['sobrecargo_habilitado']
+            except (KeyError, IndexError):
+                sobrecargo_habilitado = 0
+            
+            self.var_sobrecargo.set(bool(sobrecargo_habilitado))
+            
+            self.label_titulo.config(text=f"Cuota: {nombre_cuota} (${monto_cuota:.2f})")
+            
+            # Obtener resumen
+            resumen = obtener_resumen_cuota(self.tipo_cuota_id)
+            
+            texto_resumen = (
+                f"Total Asignados: {resumen['total_asignados']}\n"
+                f"Total Pagados: {resumen['total_pagados']} | Monto Recaudado: ${resumen['monto_recaudado']:.2f}\n"
+                f"Total Pendientes: {resumen['total_pendientes']} | Monto Pendiente: ${resumen['monto_pendiente']:.2f}"
+            )
+            self.label_resumen.config(text=texto_resumen.strip())
+            
+            # Cargar campesinos
+            cursor.execute("""
+                SELECT * FROM cuotas_campesinos
+                WHERE tipo_cuota_id = ?
+                ORDER BY pagado ASC, numero_lote ASC
+            """, (self.tipo_cuota_id,))
+            
+            cuotas_campesinos = [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
         
         self.tree.delete(*self.tree.get_children())
         
@@ -4382,11 +4381,11 @@ class VentanaDetalleCuota:
     
     def actualizar_sobrecargo(self):
         """Actualiza el estado del sobrecargo en la base de datos cuando cambia el checkbox"""
+        from modules.cuotas import get_cuotas_connection
+        conn = get_cuotas_connection()
+        cursor = conn.cursor()
+        
         try:
-            from modules.cuotas import get_cuotas_connection
-            conn = get_cuotas_connection()
-            cursor = conn.cursor()
-            
             nuevo_estado = 1 if self.var_sobrecargo.get() else 0
             
             cursor.execute("""
@@ -4396,7 +4395,6 @@ class VentanaDetalleCuota:
             """, (nuevo_estado, self.tipo_cuota_id))
             
             conn.commit()
-            conn.close()
             
             print(f"✓ Sobrecargo {'activado' if nuevo_estado else 'desactivado'} para tipo de cuota {self.tipo_cuota_id}")
             
@@ -4405,9 +4403,15 @@ class VentanaDetalleCuota:
             
         except Exception as e:
             print(f"Error al actualizar sobrecargo: {e}")
+        finally:
+            conn.close()
     
     def on_doble_click_pagar(self, event):
         """Marca una cuota como pagada al hacer doble click"""
+        # GUARD: Prevenir doble clic
+        if hasattr(self, '_procesando_pago') and self._procesando_pago:
+            return  # Ya se está procesando, ignorar clic adicional
+        
         selection = self.tree.selection()
         if not selection:
             return
@@ -4424,6 +4428,8 @@ class VentanaDetalleCuota:
         if messagebox.askyesno("Confirmar Pago", 
                                "¿Marcar esta cuota como PAGADA y generar recibo?"):
             
+            self._procesando_pago = True
+            
             try:
                 self.ventana.config(cursor="wait")
                 self.ventana.update_idletasks()
@@ -4433,25 +4439,11 @@ class VentanaDetalleCuota:
             cid = cuota_campesino_id
             
             def operacion_pesada():
-                from modules.cuotas import pagar_cuota, get_cuotas_connection, calcular_sobrecargo_acumulado
+                from modules.cuotas import pagar_cuota
                 from modules.reports import generar_recibo_cuota_pdf
                 
-                conn = get_cuotas_connection()
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT tc.sobrecargo_habilitado, cc.fecha_asignacion
-                    FROM cuotas_campesinos cc
-                    JOIN tipos_cuota tc ON cc.tipo_cuota_id = tc.id
-                    WHERE cc.id = ?
-                """, (cid,))
-                row = cursor.fetchone()
-                conn.close()
-                
-                sobrecargo = 0.0
-                if row and row['sobrecargo_habilitado']:
-                    sobrecargo = calcular_sobrecargo_acumulado(row['fecha_asignacion'])
-                
-                resultado = pagar_cuota(cid, sobrecargo=sobrecargo)
+                # pagar_cuota calcula el sobrecargo internamente
+                resultado = pagar_cuota(cid)
                 
                 recibo_id = resultado['recibo_id']
                 pdf_path = generar_recibo_cuota_pdf(recibo_id)
@@ -4463,6 +4455,7 @@ class VentanaDetalleCuota:
                     self.ventana.config(cursor="")
                 except:
                     pass
+                self._procesando_pago = False
                 from modules.reports import abrir_pdf
                 abrir_pdf(pdf_path)
                 messagebox.showinfo("Éxito", "Cuota pagada correctamente")
@@ -4474,6 +4467,7 @@ class VentanaDetalleCuota:
                     self.ventana.config(cursor="")
                 except:
                     pass
+                self._procesando_pago = False
                 messagebox.showerror("Error", f"Error al pagar cuota:\n{str(error)}")
             
             from modules.utils import ejecutar_en_hilo

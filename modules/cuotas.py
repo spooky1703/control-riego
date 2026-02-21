@@ -14,7 +14,8 @@ def get_cuotas_connection():
     os.makedirs('database', exist_ok=True)
     conn = sqlite3.connect(CUOTAS_DB_PATH, timeout=10.0, check_same_thread=False)  # Thread-safe
     conn.row_factory = sqlite3.Row
-    # Usar transacciones explícitas (default DEFERRED) para que rollback() funcione
+    # IMPORTANTE: Autocommit mode para evitar deadlocks entre conexiones.
+    conn.isolation_level = None
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA busy_timeout = 10000")
     conn.execute("PRAGMA synchronous = NORMAL")
@@ -133,7 +134,6 @@ def crear_tipo_cuota(nombre: str, monto: float, descripcion: str = "") -> int:
         conn.commit()
         return tipo_id
     except sqlite3.IntegrityError:
-        conn.close()
         raise ValueError(f"Ya existe una cuota con el nombre '{nombre}'")
     finally:
         conn.close()
@@ -158,42 +158,44 @@ def actualizar_tipo_cuota(tipo_id: int, nombre: str = None, monto: float = None,
     conn = get_cuotas_connection()
     cursor = conn.cursor()
     
-    campos = []
-    valores = []
-    
-    if nombre is not None:
-        campos.append("nombre = ?")
-        valores.append(nombre)
-    
-    if monto is not None:
-        campos.append("monto = ?")
-        valores.append(monto)
-    
-    if descripcion is not None:
-        campos.append("descripcion = ?")
-        valores.append(descripcion)
-    
-    if not campos:
+    try:
+        campos = []
+        valores = []
+        
+        if nombre is not None:
+            campos.append("nombre = ?")
+            valores.append(nombre)
+        
+        if monto is not None:
+            campos.append("monto = ?")
+            valores.append(monto)
+        
+        if descripcion is not None:
+            campos.append("descripcion = ?")
+            valores.append(descripcion)
+        
+        if not campos:
+            return False
+        
+        valores.append(tipo_id)
+        query = f"UPDATE tipos_cuota SET {', '.join(campos)} WHERE id = ?"
+        cursor.execute(query, valores)
+        
+        conn.commit()
+        return True
+    finally:
         conn.close()
-        return False
-    
-    valores.append(tipo_id)
-    query = f"UPDATE tipos_cuota SET {', '.join(campos)} WHERE id = ?"
-    cursor.execute(query, valores)
-    
-    conn.commit()
-    conn.close()
-    return True
 
 def desactivar_tipo_cuota(tipo_id: int):
     """Desactiva un tipo de cuota"""
     conn = get_cuotas_connection()
     cursor = conn.cursor()
     
-    cursor.execute('UPDATE tipos_cuota SET activa = 0 WHERE id = ?', (tipo_id,))
-    
-    conn.commit()
-    conn.close()
+    try:
+        cursor.execute('UPDATE tipos_cuota SET activa = 0 WHERE id = ?', (tipo_id,))
+        conn.commit()
+    finally:
+        conn.close()
 
 # ==================== ASIGNACIÓN DE CUOTAS ====================
 
@@ -203,74 +205,76 @@ def asignar_cuota_a_campesino(campesino_id: int, numero_lote: str, nombre_campes
     conn = get_cuotas_connection()
     cursor = conn.cursor()
     
-    # Obtener la tarifa por hectárea del tipo de cuota
-    cursor.execute('SELECT monto, nombre FROM tipos_cuota WHERE id = ?', (tipo_cuota_id,))
-    row = cursor.fetchone()
-    
-    if not row:
+    try:
+        # Obtener la tarifa por hectárea del tipo de cuota
+        cursor.execute('SELECT monto, nombre FROM tipos_cuota WHERE id = ?', (tipo_cuota_id,))
+        row = cursor.fetchone()
+        
+        if not row:
+            raise ValueError("Tipo de cuota no encontrado")
+        
+        tarifa_por_hectarea = row['monto']
+        
+        # ✅ CALCULAR MONTO SEGÚN SUPERFICIE (igual que riegos)
+        monto = superficie * tarifa_por_hectarea
+        
+        cursor.execute('''
+            INSERT INTO cuotas_campesinos 
+            (campesino_id, tipo_cuota_id, numero_lote, nombre_campesino, barrio, monto)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (campesino_id, tipo_cuota_id, numero_lote, nombre_campesino, barrio, monto))
+        
+        cuota_id = cursor.lastrowid
+        conn.commit()
+        return cuota_id
+    finally:
         conn.close()
-        raise ValueError("Tipo de cuota no encontrado")
-    
-    tarifa_por_hectarea = row['monto']
-    
-    # ✅ CALCULAR MONTO SEGÚN SUPERFICIE (igual que riegos)
-    monto = superficie * tarifa_por_hectarea
-    
-    cursor.execute('''
-        INSERT INTO cuotas_campesinos 
-        (campesino_id, tipo_cuota_id, numero_lote, nombre_campesino, barrio, monto)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (campesino_id, tipo_cuota_id, numero_lote, nombre_campesino, barrio, monto))
-    
-    cuota_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return cuota_id
 
 def asignar_cuota_masiva(tipo_cuota_id: int, campesinos_lista: List[Dict]) -> int:
     """Asigna una cuota a múltiples campesinos (MONTO PROPORCIONAL A SUPERFICIE)"""
     conn = get_cuotas_connection()
     cursor = conn.cursor()
     
-    # Obtener la tarifa por hectárea del tipo de cuota
-    cursor.execute('SELECT monto FROM tipos_cuota WHERE id = ?', (tipo_cuota_id,))
-    row = cursor.fetchone()
-    
-    if not row:
+    try:
+        # Obtener la tarifa por hectárea del tipo de cuota
+        cursor.execute('SELECT monto FROM tipos_cuota WHERE id = ?', (tipo_cuota_id,))
+        row = cursor.fetchone()
+        
+        if not row:
+            raise ValueError("Tipo de cuota no encontrado")
+        
+        tarifa_por_hectarea = row['monto']
+        total_asignados = 0
+        
+        for campesino in campesinos_lista:
+            try:
+                # ✅ CALCULAR MONTO SEGÚN SUPERFICIE
+                monto = campesino['superficie'] * tarifa_por_hectarea
+                
+                cursor.execute('''
+                    INSERT INTO cuotas_campesinos 
+                    (campesino_id, tipo_cuota_id, numero_lote, nombre_campesino, barrio, monto)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (
+                    campesino['id'],
+                    tipo_cuota_id,
+                    campesino['numero_lote'],
+                    campesino['nombre'],
+                    campesino['barrio'],
+                    monto
+                ))
+                total_asignados += 1
+            except sqlite3.IntegrityError:
+                # Duplicado: campesino ya tiene esta cuota asignada
+                continue
+            except Exception as e:
+                print(f"Error asignando cuota a {campesino.get('nombre', '?')}: {e}")
+                continue
+        
+        conn.commit()
+        return total_asignados
+    finally:
         conn.close()
-        raise ValueError("Tipo de cuota no encontrado")
-    
-    tarifa_por_hectarea = row['monto']
-    total_asignados = 0
-    
-    for campesino in campesinos_lista:
-        try:
-            # ✅ CALCULAR MONTO SEGÚN SUPERFICIE
-            monto = campesino['superficie'] * tarifa_por_hectarea
-            
-            cursor.execute('''
-                INSERT INTO cuotas_campesinos 
-                (campesino_id, tipo_cuota_id, numero_lote, nombre_campesino, barrio, monto)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (
-                campesino['id'],
-                tipo_cuota_id,
-                campesino['numero_lote'],
-                campesino['nombre'],
-                campesino['barrio'],
-                monto
-            ))
-            total_asignados += 1
-        except sqlite3.IntegrityError:
-            # Duplicado: campesino ya tiene esta cuota asignada
-            continue
-        except Exception as e:
-            print(f"Error asignando cuota a {campesino.get('nombre', '?')}: {e}")
-            continue
-    
-    conn.commit()
-    conn.close()
-    return total_asignados
 
 def obtener_cuotas_campesino(campesino_id: int) -> List[Dict]:
     """Obtiene todas las cuotas de un campesino (pagadas y pendientes)"""
@@ -281,7 +285,7 @@ def obtener_cuotas_campesino(campesino_id: int) -> List[Dict]:
         SELECT cc.*, tc.nombre as nombre_tipo_cuota, rc.monto as monto_pagado, rc.sobrecargo
         FROM cuotas_campesinos cc
         JOIN tipos_cuota tc ON cc.tipo_cuota_id = tc.id
-        LEFT JOIN recibos_cuotas rc ON cc.recibo_folio = rc.folio
+        LEFT JOIN recibos_cuotas rc ON cc.recibo_folio = rc.folio AND cc.tipo_cuota_id = rc.tipo_cuota_id
         WHERE cc.campesino_id = ?
         ORDER BY cc.fecha_asignacion DESC
     ''', (campesino_id,))
@@ -382,6 +386,8 @@ def registrar_abono(cuota_campesino_id: int, monto_abono: float) -> Dict:
     cursor = conn.cursor()
     
     try:
+        # Transacción explícita: múltiples operaciones deben ser atómicas
+        cursor.execute("BEGIN")
         # Obtener datos de la cuota
         cursor.execute('''
             SELECT cc.*, tc.nombre as nombre_cuota, tc.folio_actual, tc.sobrecargo_habilitado
@@ -486,37 +492,32 @@ def pagar_cuota(cuota_campesino_id: int, sobrecargo: float = 0.0) -> Dict:
     """
     Función legacy para compatibilidad, ahora usa registrar_abono internamente
     para pagar el TOTAL restante de una sola vez.
+    NOTA: El parámetro sobrecargo se mantiene por compatibilidad pero se ignora;
+    registrar_abono calcula el sobrecargo internamente.
     """
     conn = get_cuotas_connection()
     cursor = conn.cursor()
     
-    # Obtener saldo pendiente (SIN sumar sobrecargo aquí, porque registrar_abono lo calcula internamente)
-    cursor.execute('SELECT monto, monto_pagado FROM cuotas_campesinos WHERE id = ?', (cuota_campesino_id,))
-    row = cursor.fetchone()
-    conn.close()
+    try:
+        # Una sola query con JOIN para obtener todos los datos necesarios
+        cursor.execute('''
+            SELECT cc.monto, cc.monto_pagado, cc.fecha_asignacion,
+                   tc.sobrecargo_habilitado
+            FROM cuotas_campesinos cc
+            JOIN tipos_cuota tc ON cc.tipo_cuota_id = tc.id
+            WHERE cc.id = ?
+        ''', (cuota_campesino_id,))
+        row = cursor.fetchone()
+    finally:
+        conn.close()
     
     if not row:
         raise ValueError("Cuota no encontrada")
     
-    # registrar_abono ya calcula el sobrecargo internamente,
-    # así que necesitamos pasar el saldo exacto que registrar_abono espera recibir.
-    # registrar_abono calcula: monto_total = cuota.monto + sobrecargo
-    # y luego: saldo_pendiente = monto_total - monto_pagado
-    # Así que le pasamos exactamente ese saldo_pendiente para que coincida.
-    conn2 = get_cuotas_connection()
-    cur2 = conn2.cursor()
-    cur2.execute('''
-        SELECT cc.fecha_asignacion, tc.sobrecargo_habilitado
-        FROM cuotas_campesinos cc
-        JOIN tipos_cuota tc ON cc.tipo_cuota_id = tc.id
-        WHERE cc.id = ?
-    ''', (cuota_campesino_id,))
-    info = cur2.fetchone()
-    conn2.close()
-    
+    # Calcular sobrecargo si aplica
     sobrecargo_real = 0.0
-    if info and info['sobrecargo_habilitado']:
-        sobrecargo_real = calcular_sobrecargo_acumulado(info['fecha_asignacion'])
+    if row['sobrecargo_habilitado']:
+        sobrecargo_real = calcular_sobrecargo_acumulado(row['fecha_asignacion'])
     
     saldo = (row['monto'] + sobrecargo_real) - row['monto_pagado']
     

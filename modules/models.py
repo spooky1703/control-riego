@@ -18,7 +18,11 @@ def get_connection():
     conn = sqlite3.connect(DB_PATH, timeout=10.0, check_same_thread=False)  # Thread-safe
     conn.row_factory = sqlite3.Row
     
-    # Usar transacciones explícitas (default DEFERRED) para que rollback() funcione
+    # IMPORTANTE: Autocommit mode para evitar deadlocks.
+    # Sin esto, funciones como eliminar_recibo() que llaman a registrar_auditoria()
+    # (que abre su propia conexión) causan "database is locked" porque la primera
+    # conexión mantiene un lock de escritura mientras la segunda intenta escribir.
+    conn.isolation_level = None
     conn.execute("PRAGMA journal_mode = WAL")  # Write-Ahead Logging
     conn.execute("PRAGMA busy_timeout = 10000")  # 10 segundos en modo busy
     conn.execute("PRAGMA synchronous = NORMAL")  # Mejor rendimiento
@@ -209,29 +213,31 @@ def crear_campesino(datos: Dict) -> int:
             datos.get('extension_tierra', '')
         ))
         campesino_id = cursor.lastrowid
-        registrar_auditoria(
-            'CREAR_CAMPESINO',
-            f"Nuevo campesino registrado: {datos['nombre']} (Lote: {datos['numero_lote']})",
-            None
-        )
         conn.commit()
-        return campesino_id
     except sqlite3.IntegrityError:
-        conn.close()
         raise ValueError(f"El lote {datos['numero_lote']} ya existe")
     finally:
         conn.close()
+        
+    # Auditoría DESPUÉS de cerrar la conexión para evitar locks anidados
+    registrar_auditoria(
+        'CREAR_CAMPESINO',
+        f"Nuevo campesino registrado: {datos['nombre']} (Lote: {datos['numero_lote']})",
+        None
+    )
+    return campesino_id
 
 def actualizar_campesino(campesino_id: int, datos: Dict) -> bool:
     """Actualiza los datos de un campesino"""
-    conn = get_connection()
-    cursor = conn.cursor()
     datos_previos = obtener_campesino_por_id(campesino_id)
     if 'superficie' in datos and datos['superficie'] != datos_previos['superficie']:
         siembra_activa = obtener_siembra_activa(campesino_id)
         if siembra_activa:
-            conn.close()
             raise ValueError("No se puede cambiar la superficie con siembra activa")
+            
+    conn = get_connection()
+    cursor = conn.cursor()
+    
     try:
         campos_actualizar = []
         valores = []
@@ -241,45 +247,50 @@ def actualizar_campesino(campesino_id: int, datos: Dict) -> bool:
                 campos_actualizar.append(f"{campo} = ?")
                 valores.append(datos[campo])
         if not campos_actualizar:
-            conn.close()
             return False
+            
         valores.append(campesino_id)
         query = f"UPDATE campesinos SET {', '.join(campos_actualizar)} WHERE id = ?"
         cursor.execute(query, valores)
-        registrar_auditoria(
-            'EDITAR_CAMPESINO',
-            f"Campesino actualizado: {datos_previos['nombre']} (ID: {campesino_id})",
-            json.dumps(datos_previos)
-        )
-        
-        # ✅ SINCRONIZAR CON CUOTAS.DB
-        try:
-            actualizar_datos_campesino_en_cuotas(campesino_id, datos)
-        except Exception as e:
-            print(f"Advertencia: No se pudo sincronizar con cuotas.db: {e}")
-            
         conn.commit()
-        return True
     finally:
         conn.close()
+        
+    # Auditoría y sincronización DESPUÉS de cerrar la conexión principal
+    registrar_auditoria(
+        'EDITAR_CAMPESINO',
+        f"Campesino actualizado: {datos_previos['nombre']} (ID: {campesino_id})",
+        json.dumps(datos_previos)
+    )
+    try:
+        actualizar_datos_campesino_en_cuotas(campesino_id, datos)
+    except Exception as e:
+        print(f"Advertencia: No se pudo sincronizar con cuotas.db: {e}")
+        
+    return True
 
 def eliminar_campesino(campesino_id: int) -> bool:
     """Eliminación lógica de un campesino"""
-    conn = get_connection()
-    cursor = conn.cursor()
     siembra_activa = obtener_siembra_activa(campesino_id)
     if siembra_activa:
-        conn.close()
         raise ValueError("No se puede eliminar un campesino con siembra activa")
+        
     datos_previos = obtener_campesino_por_id(campesino_id)
-    cursor.execute('UPDATE campesinos SET activo = 0 WHERE id = ?', (campesino_id,))
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('UPDATE campesinos SET activo = 0 WHERE id = ?', (campesino_id,))
+        conn.commit()
+    finally:
+        conn.close()
+        
     registrar_auditoria(
         'ELIMINAR_CAMPESINO',
         f"Campesino eliminado: {datos_previos['nombre']} (Lote: {datos_previos['numero_lote']})",
         json.dumps(datos_previos)
     )
-    conn.commit()
-    conn.close()
     return True
 
 def obtener_todos_campesinos() -> List[Dict]:
@@ -561,26 +572,30 @@ def obtener_recibo_por_id(recibo_id: int) -> Optional[Dict]:
 
 def eliminar_recibo(recibo_id: int, motivo: str = ""):
     """Marca un recibo como eliminado"""
-    conn = get_connection()
-    cursor = conn.cursor()
     recibo = obtener_recibo_por_id(recibo_id)
     if not recibo:
-        conn.close()
         raise ValueError("Recibo no encontrado")
-    cursor.execute('''
-        UPDATE recibos 
-        SET eliminado = 1, 
-            fecha_eliminacion = datetime('now'),
-            motivo_eliminacion = ?
-        WHERE id = ?
-    ''', (motivo, recibo_id))
+        
+    conn = get_connection()
+    cursor = conn.cursor()
+        
+    try:
+        cursor.execute('''
+            UPDATE recibos 
+            SET eliminado = 1, 
+                fecha_eliminacion = datetime('now'),
+                motivo_eliminacion = ?
+            WHERE id = ?
+        ''', (motivo, recibo_id))
+        conn.commit()
+    finally:
+        conn.close()
+        
     registrar_auditoria(
         'ELIMINAR_RECIBO',
         f"Recibo eliminado: Folio {recibo['folio']} - {recibo['nombre']} - ${recibo['costo']:.2f}",
         json.dumps(recibo, default=str)
     )
-    conn.commit()
-    conn.close()
 
 def eliminar_recibo_db(recibo_id: int, motivo: str = ""):
     """
@@ -588,26 +603,25 @@ def eliminar_recibo_db(recibo_id: int, motivo: str = ""):
     """
     conn = get_connection()
     cursor = conn.cursor()
+    try:
+        # Obtener datos previos para auditoría
+        cursor.execute("SELECT * FROM recibos WHERE id = ?", (recibo_id,))
+        recibo_previo = cursor.fetchone()
+        if not recibo_previo:
+            raise ValueError("Recibo no encontrado para eliminar")
 
-    # Obtener datos previos para auditoría
-    cursor.execute("SELECT * FROM recibos WHERE id = ?", (recibo_id,))
-    recibo_previo = cursor.fetchone()
-    if not recibo_previo:
+        # Marcar como eliminado en lugar de borrar físicamente
+        cursor.execute("UPDATE recibos SET eliminado = 1, motivo_eliminacion = ? WHERE id = ?", (motivo, recibo_id))
+        conn.commit()
+
+        # Registrar en auditoría DESPUÉS del commit
+        detalles_auditoria = json.dumps({
+            "motivo_eliminacion": motivo,
+            "datos_previos": dict(recibo_previo)
+        })
+        registrar_auditoria('ELIMINAR_RECIBO', f"Recibo eliminado: Folio {recibo_previo['folio']}", detalles_auditoria)
+    finally:
         conn.close()
-        raise ValueError("Recibo no encontrado para eliminar")
-
-    # Marcar como eliminado en lugar de borrar físicamente
-    cursor.execute("UPDATE recibos SET eliminado = 1, motivo_eliminacion = ? WHERE id = ?", (motivo, recibo_id))
-
-    # Registrar en auditoría
-    detalles_auditoria = json.dumps({
-        "motivo_eliminacion": motivo,
-        "datos_previos": dict(recibo_previo) # Convertir a dict para JSON
-    })
-    registrar_auditoria('ELIMINAR_RECIBO', f"Recibo eliminado: Folio {recibo_previo['folio']}", detalles_auditoria)
-
-    conn.commit()
-    conn.close()
 
 def obtener_recibos_campesino(campesino_id: int) -> List[Dict]:
     """Obtiene todos los recibos de un campesino"""
@@ -655,12 +669,12 @@ def actualizar_recibo(recibo_id: int, nuevos_datos: Dict) -> bool:
         valores.append(recibo_id)
         query = f"UPDATE recibos SET {', '.join(campos_actualizar)} WHERE id = ?"
         cursor.execute(query, valores)
+        conn.commit()
         registrar_auditoria(
             'EDITAR_RECIBO',
             f"Recibo actualizado: Folio {datos_previos['folio']}",
             json.dumps(datos_previos)
         )
-        conn.commit()
         return True
     finally:
         conn.close()
@@ -680,12 +694,14 @@ def actualizar_configuracion(clave: str, valor: str):
     """Actualiza un valor de configuración"""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('''
-        INSERT OR REPLACE INTO configuracion (clave, valor)
-        VALUES (?, ?)
-    ''', (clave, valor))
-    conn.commit()
-    conn.close()
+    try:
+        cursor.execute('''
+            INSERT OR REPLACE INTO configuracion (clave, valor)
+            VALUES (?, ?)
+        ''', (clave, valor))
+        conn.commit()
+    finally:
+        conn.close()
 
 def obtener_toda_configuracion() -> Dict:
     """Obtiene toda la configuración del sistema"""
@@ -702,12 +718,14 @@ def registrar_auditoria(tipo_evento: str, descripcion: str, datos_previos: Optio
     """Registra un evento en la tabla de auditoría"""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO auditoria (fecha_hora, tipo_evento, usuario, descripcion, datos_previos)
-        VALUES (datetime('now', 'localtime'), ?, 'Sistema', ?, ?)
-    ''', (tipo_evento, descripcion, datos_previos))
-    conn.commit()
-    conn.close()
+    try:
+        cursor.execute('''
+            INSERT INTO auditoria (fecha_hora, tipo_evento, usuario, descripcion, datos_previos)
+            VALUES (datetime('now', 'localtime'), ?, 'Sistema', ?, ?)
+        ''', (tipo_evento, descripcion, datos_previos))
+        conn.commit()
+    finally:
+        conn.close()
 
 def obtener_auditoria(limite: int = 100) -> List[Dict]:
     """Obtiene los últimos registros de auditoría"""
@@ -757,34 +775,36 @@ def cargar_campesinos_desde_csv(ruta_csv: str):
     total_cargados = 0
     errores = []
     
-    for barrio, inicio, fin in barrios_ordenados:
-        for idx in range(inicio + 2, fin):
-            try:
-                row = df_raw.iloc[idx]
-                lote = str(row[1]).strip()
-                nombre = str(row[2]).strip()
-                superficie = str(row[3]).strip()
-                
-                if lote == 'nan' or nombre == 'nan' or lote == '' or nombre == '':
-                    continue
-                
-                sup_valor = float(superficie)
-                
-                cursor.execute('''
-                    INSERT OR IGNORE INTO campesinos 
-                    (numero_lote, nombre, localidad, barrio, superficie, activo)
-                    VALUES (?, ?, ?, ?, ?, 1)
-                ''', (lote, nombre, 'Tezontepec de Aldama', barrio, sup_valor))
-                
-                if cursor.rowcount > 0:
-                    total_cargados += 1
+    try:
+        for barrio, inicio, fin in barrios_ordenados:
+            for idx in range(inicio + 2, fin):
+                try:
+                    row = df_raw.iloc[idx]
+                    lote = str(row[1]).strip()
+                    nombre = str(row[2]).strip()
+                    superficie = str(row[3]).strip()
                     
-            except Exception as e:
-                errores.append(f"Fila {idx}: {str(e)}")
-                continue
-    
-    conn.commit()
-    conn.close()
+                    if lote == 'nan' or nombre == 'nan' or lote == '' or nombre == '':
+                        continue
+                    
+                    sup_valor = float(superficie)
+                    
+                    cursor.execute('''
+                        INSERT OR IGNORE INTO campesinos 
+                        (numero_lote, nombre, localidad, barrio, superficie, activo)
+                        VALUES (?, ?, ?, ?, ?, 1)
+                    ''', (lote, nombre, 'Tezontepec de Aldama', barrio, sup_valor))
+                    
+                    if cursor.rowcount > 0:
+                        total_cargados += 1
+                        
+                except Exception as e:
+                    errores.append(f"Fila {idx}: {str(e)}")
+                    continue
+        
+        conn.commit()
+    finally:
+        conn.close()
     
     print(f"✓ Total de campesinos cargados: {total_cargados}")
     if errores:
@@ -942,6 +962,8 @@ def partir_lote(campesino_id: int, num_divisiones: int, superficies: List[float]
     cursor = conn.cursor()
     
     try:
+        # Transacción explícita: UPDATE + múltiples INSERTs deben ser atómicos
+        cursor.execute("BEGIN")
         # Obtener datos del campesino original
         cursor.execute("SELECT * FROM campesinos WHERE id = ?", (campesino_id,))
         row = cursor.fetchone()
@@ -997,28 +1019,27 @@ def partir_lote(campesino_id: int, num_divisiones: int, superficies: List[float]
             nuevos_ids.append(cursor.lastrowid)
         
         conn.commit()
-        
-        # Registrar en auditoría
-        registrar_auditoria(
-            'LOTE_PARTIDO',
-            f"Lote {lote_base} partido en {num_divisiones + 1} sublotes. "
-            f"Superficies: {', '.join([f'{s:.4f}' for s in superficies])} ha",
-            json.dumps({'campesino_id': campesino_id, 'lote': lote_base})
-        )
-        
-        # ✅ SINCRONIZAR CON CUOTAS.DB (Actualizar superficie del original)
-        try:
-            actualizar_datos_campesino_en_cuotas(campesino_id, {'superficie': superficies[0]})
-        except Exception as e:
-            print(f"Advertencia: No se pudo sincronizar con cuotas.db: {e}")
-            
-        return nuevos_ids
-        
     except Exception as e:
         conn.rollback()
         raise e
     finally:
         conn.close()
+        
+    # Registrar en auditoría y sincronizar DESPUÉS de cerrar la conexión principal
+    registrar_auditoria(
+        'LOTE_PARTIDO',
+        f"Lote {lote_base} partido en {num_divisiones + 1} sublotes. "
+        f"Superficies: {', '.join([f'{s:.4f}' for s in superficies])} ha",
+        json.dumps({'campesino_id': campesino_id, 'lote': lote_base})
+    )
+    
+    # ✅ SINCRONIZAR CON CUOTAS.DB (Actualizar superficie del original)
+    try:
+        actualizar_datos_campesino_en_cuotas(campesino_id, {'superficie': superficies[0]})
+    except Exception as e:
+        print(f"Advertencia: No se pudo sincronizar con cuotas.db: {e}")
+        
+    return nuevos_ids
 
 def renombrar_campesino(campesino_id: int, nuevo_nombre: str) -> bool:
     """
@@ -1053,27 +1074,26 @@ def renombrar_campesino(campesino_id: int, nuevo_nombre: str) -> bool:
         """, (nuevo_nombre, campesino_id))
         
         conn.commit()
-        
-        # Registrar en auditoría
-        registrar_auditoria(
-            'CAMPESINO_RENOMBRADO',
-            f"Lote {numero_lote}: '{nombre_anterior}' → '{nuevo_nombre}'",
-            json.dumps({'campesino_id': campesino_id, 'nombre_anterior': nombre_anterior})
-        )
-        
-        # ✅ SINCRONIZAR CON CUOTAS.DB
-        try:
-            actualizar_datos_campesino_en_cuotas(campesino_id, {'nombre': nuevo_nombre})
-        except Exception as e:
-            print(f"Advertencia: No se pudo sincronizar con cuotas.db: {e}")
-            
-        return True
-        
     except Exception as e:
         conn.rollback()
         raise e
     finally:
         conn.close()
+        
+    # Registrar en auditoría y sincronizar DESPUÉS de cerrar conexión principal
+    registrar_auditoria(
+        'CAMPESINO_RENOMBRADO',
+        f"Lote {numero_lote}: '{nombre_anterior}' → '{nuevo_nombre}'",
+        json.dumps({'campesino_id': campesino_id, 'nombre_anterior': nombre_anterior})
+    )
+    
+    # ✅ SINCRONIZAR CON CUOTAS.DB
+    try:
+        actualizar_datos_campesino_en_cuotas(campesino_id, {'nombre': nuevo_nombre})
+    except Exception as e:
+        print(f"Advertencia: No se pudo sincronizar con cuotas.db: {e}")
+        
+    return True
 
 def actualizar_superficie_campesino(campesino_id: int, nueva_superficie: float) -> bool:
     """
@@ -1109,27 +1129,26 @@ def actualizar_superficie_campesino(campesino_id: int, nueva_superficie: float) 
         """, (nueva_superficie, campesino_id))
         
         conn.commit()
-        
-        # Registrar en auditoría
-        registrar_auditoria(
-            'SUPERFICIE_ACTUALIZADA',
-            f"Lote {numero_lote} ({nombre}): {superficie_anterior} ha → {nueva_superficie} ha",
-            json.dumps({'campesino_id': campesino_id, 'superficie_anterior': superficie_anterior})
-        )
-        
-        # ✅ SINCRONIZAR CON CUOTAS.DB
-        try:
-            actualizar_datos_campesino_en_cuotas(campesino_id, {'superficie': nueva_superficie})
-        except Exception as e:
-            print(f"Advertencia: No se pudo sincronizar con cuotas.db: {e}")
-            
-        return True
-        
     except Exception as e:
         conn.rollback()
         raise e
     finally:
         conn.close()
+        
+    # Registrar en auditoría y sincronizar DESPUÉS de cerrar conexión principal
+    registrar_auditoria(
+        'SUPERFICIE_ACTUALIZADA',
+        f"Lote {numero_lote} ({nombre}): {superficie_anterior} ha → {nueva_superficie} ha",
+        json.dumps({'campesino_id': campesino_id, 'superficie_anterior': superficie_anterior})
+    )
+    
+    # ✅ SINCRONIZAR CON CUOTAS.DB
+    try:
+        actualizar_datos_campesino_en_cuotas(campesino_id, {'superficie': nueva_superficie})
+    except Exception as e:
+        print(f"Advertencia: No se pudo sincronizar con cuotas.db: {e}")
+        
+    return True
 
 def migrar_agregar_cargo_documentos():
     """Migración: Agrega columna cargo_documentos a la tabla recibos"""

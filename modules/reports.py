@@ -21,7 +21,7 @@ if platform.system() == "Windows":
         win32api = None
         print("Advertencia: pywin32 no está instalado. La impresión en Windows puede fallar. Instale con: pip install pywin32")
 
-from typing import Dict, List
+
 from modules.models import obtener_recibo_por_id, obtener_configuracion
 
 # ✅ AGREGAR ESTOS IMPORTS PARA LA FUNCIÓN DE EXCEL
@@ -681,7 +681,7 @@ def exportar_a_excel(recibos: List[Dict], filename: str) -> str:
             for cell in col:
                 try:
                     if len(str(cell.value)) > max_length:
-                        max_length = len(cell.value)
+                        max_length = len(str(cell.value))
                 except Exception:
                     pass
             adjusted_width = min((max_length + 2), 50)
@@ -1965,19 +1965,24 @@ def generar_reporte_cuota_pdf(tipo_cuota_id: int) -> str:
     conn = get_cuotas_connection()
     cursor = conn.cursor()
     
-    # Obtener información de la cuota
-    cursor.execute("SELECT * FROM tipos_cuota WHERE id = ?", (tipo_cuota_id,))
-    cuota = dict(cursor.fetchone())
-    
-    # Obtener todos los campesinos asignados
-    cursor.execute("""
-        SELECT * FROM cuotas_campesinos
-        WHERE tipo_cuota_id = ?
-        ORDER BY pagado ASC, numero_lote ASC
-    """, (tipo_cuota_id,))
-    
-    campesinos = [dict(row) for row in cursor.fetchall()]
-    conn.close()
+    try:
+        # Obtener información de la cuota
+        cursor.execute("SELECT * FROM tipos_cuota WHERE id = ?", (tipo_cuota_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise ValueError("Cuota no encontrada")
+        cuota = dict(row)
+        
+        # Obtener todos los campesinos asignados
+        cursor.execute("""
+            SELECT * FROM cuotas_campesinos
+            WHERE tipo_cuota_id = ?
+            ORDER BY pagado ASC, numero_lote ASC
+        """, (tipo_cuota_id,))
+        
+        campesinos = [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
     
     # Obtener resumen
     resumen = obtener_resumen_cuota(tipo_cuota_id)
