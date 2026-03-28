@@ -251,6 +251,7 @@ class VentanaPrincipal:
             'config': self.abrir_configuracion,
             'backup': self.crear_backup_manual,
             'estadisticas': self.abrir_estadisticas,
+            'mapa': self.abrir_mapa,
             'admin': self.abrir_administrar_datos
         }
         
@@ -593,6 +594,28 @@ class VentanaPrincipal:
     def abrir_estadisticas(self):
         """Abre la ventana de estadísticas"""
         VentanaEstadisticas(self.root)
+
+    def abrir_mapa(self):
+        """Abre el mapa interactivo de parcelas en ventana independiente"""
+        try:
+            from modules.mapa_interactivo import MapaCultivosApp
+            
+            ventana = tk.Toplevel(self.root)
+            ventana.title("Mapa Interactivo de Parcelas - Seccion 4")
+            ventana.geometry("1400x900")
+            ventana.transient(self.root)
+            
+            app = MapaCultivosApp(ventana)
+        except FileNotFoundError as e:
+            messagebox.showerror("Error", str(e))
+        except ImportError as e:
+            messagebox.showerror(
+                "Error",
+                f"No se pudo cargar el modulo del mapa.\n\n"
+                f"Detalle: {e}"
+            )
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo abrir el mapa:\n{e}")
 
     def on_buscar(self, event=None):
         """Busca campesinos según el criterio introducido."""

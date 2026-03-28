@@ -109,8 +109,8 @@ def generar_recibo_pdf(recibo_id: int, es_reimpresion: bool = False) -> str:
     nombre_oficina = obtener_configuracion('nombre_oficina') or 'ASOCIACIÓN DE RIEGO'
     ubicacion = obtener_configuracion('ubicacion') or 'Tezontepec de Aldama, Hgo.'
 
-    recibos_dir = os.path.join('database', 'recibos')
-    os.makedirs(recibos_dir, exist_ok=True)
+    import tempfile
+    recibos_dir = tempfile.gettempdir()
 
     sufijo = '_REIMPRESION' if es_reimpresion else ''
     filename = f"recibo_{recibo['folio']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{sufijo}.pdf"
@@ -135,12 +135,8 @@ def generar_recibo_pdf_temporal(recibo_id: int, es_reimpresion: bool = False) ->
     nombre_oficina = obtener_configuracion('nombre_oficina') or 'ASOCIACIÓN DE RIEGO'
     ubicacion = obtener_configuracion('ubicacion') or 'Tezontepec de Aldama, Hgo.'
 
-    # Crear carpeta temporal en /tmp (Mac/Linux) o %TEMP% (Windows)
-    if platform.system() == "Windows":
-        temp_dir = os.path.join(os.environ.get('TEMP', os.getcwd()), 'recibos_temp')
-    else:
-        temp_dir = os.path.join('/tmp', 'recibos_temp')
-
+    import tempfile
+    temp_dir = tempfile.gettempdir()
     os.makedirs(temp_dir, exist_ok=True)
 
     sufijo = '_REIMPRESION' if es_reimpresion else ''
@@ -1763,8 +1759,9 @@ def generar_recibo_cuota_pdf(recibo_cuota_id: int) -> str:
     nombre_oficina = obtener_configuracion('nombre_oficina') or "ASOCIACIÓN DE RIEGO"
     ubicacion = obtener_configuracion('ubicacion') or "Tezontepec de Aldama, Hgo."
     
-    # Crear carpeta permanente
-    recibos_dir = os.path.join('database', 'recibos')
+    # Crear carpeta temporal
+    import tempfile
+    recibos_dir = tempfile.gettempdir()
     os.makedirs(recibos_dir, exist_ok=True)
     
     filename = f"cuota_{recibo['folio']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
@@ -1791,11 +1788,8 @@ def generar_recibo_cuota_pdf_temporal(recibo_cuota_id: int) -> str:
     ubicacion = obtener_configuracion('ubicacion') or "Tezontepec de Aldama, Hgo."
     
     # Crear carpeta temporal
-    if platform.system() == 'Windows':
-        tempdir = os.path.join(os.environ.get('TEMP', os.getcwd()), 'recibos_temp')
-    else:
-        tempdir = os.path.join('/tmp', 'recibos_temp')
-    
+    import tempfile
+    tempdir = tempfile.gettempdir()
     os.makedirs(tempdir, exist_ok=True)
     
     filename = f"cuota_{recibo['folio']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"

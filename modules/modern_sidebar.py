@@ -99,6 +99,7 @@ class ModernSidebar:
             ('config', 'config.svg', 'Config'),
             ('backup', 'backup.svg', 'Backup'),
             ('estadisticas', 'estadisticas.svg', 'Estadísticas'),
+            ('mapa', 'mapa.svg', 'Mapa'),
             ('admin', 'admin.svg', 'Admin')
         ]
         
@@ -166,6 +167,7 @@ class ModernSidebar:
                 'config': '⚙️',
                 'backup': '💾',
                 'estadisticas': '📊',
+                'mapa': '🗺️',
                 'admin': '🔧'
             }
             text_display = f"  {emoji_map.get(btn_id, '•')}  {text}"
