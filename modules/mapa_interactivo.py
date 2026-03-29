@@ -453,6 +453,23 @@ class MapaCultivosApp:
         self.ax.set_ylim([cy - new_yrange / 2, cy + new_yrange / 2])
         self.canvas.draw_idle()
 
+    def _on_zoom_scroll(self, *args):
+        """Callback del Scrollbar de zoom.
+        args contiene (first, last) como fracciones del rango.
+        Convertimos a nivel de zoom entre 0.5 y 20.0.
+        """
+        # args[0] es la posición inicial del thumb (0.0‑1.0)
+        try:
+            pos = float(args[0])
+        except Exception:
+            return
+        # Mapear posición a rango de zoom
+        zoom_min, zoom_max = 0.5, 20.0
+        zoom_level = zoom_min + (zoom_max - zoom_min) * pos
+        self._zoom_var.set(zoom_level)
+        self._zoom_label.config(text=f'{zoom_level:.1f}x')
+        self._aplicar_zoom(zoom_level)
+
     def _on_zoom_slider(self, val):
         """Llamado cuando se mueve el slider de zoom."""
         zoom_level = float(val)
@@ -477,13 +494,13 @@ class MapaCultivosApp:
         self.canvas.draw_idle()
 
     def _zoom_reset(self):
-        """Vuelve a la vista original."""
-        if hasattr(self, '_base_xlim'):
-            self.ax.set_xlim(self._base_xlim)
-            self.ax.set_ylim(self._base_ylim)
-            self._zoom_var.set(1.0)
-            self._zoom_label.config(text='1.0x')
-            self.canvas.draw_idle()
+        """Restablece el zoom a 1x y centra la vista."""
+        self._zoom_var.set(1.0)
+        self._zoom_label.config(text='1.0x')
+        # Resetear límites de vista a los base guardados
+        self.ax.set_xlim(self.base_xlim)
+        self.ax.set_ylim(self.base_ylim)
+        self.canvas.draw_idle()
 
     def _on_press(self, event):
         """Inicio del pan (button 1 = izquierdo, button 2/3 = derecho)."""
@@ -709,7 +726,8 @@ class MapaCultivosApp:
 
         elif mode == 'riegos':
             import matplotlib.colors as mcolors
-            cmap = mcolors.LinearSegmentedColormap.from_list("riegos", ["#e53e3e", "#ecc94b", "#38a169"])
+            # Red gradient: light → medium → dark red
+            cmap = mcolors.LinearSegmentedColormap.from_list("riegos", ["#ffcccc", "#ff6666", "#cc0000"])
             riegos = int(datos.get('num_riegos') or 0)
             media = self.media_riegos.get()
             if media <= 0: media = 1
@@ -728,6 +746,8 @@ class MapaCultivosApp:
 
     def _redibujar(self):
         self.ax.clear()
+        # Cambiar cursor del canvas a solo mover (fleur)
+        self.canvas.get_tk_widget().config(cursor='fleur')
         self.ax.set_facecolor(THEME['map_bg'])
         self.ax.set_aspect('equal')
         self.ax.axis('off')
@@ -808,7 +828,8 @@ class MapaCultivosApp:
             color_map = COLORES_BARRIO
         elif mode == 'riegos':
             import matplotlib.colors as mcolors
-            cmap = mcolors.LinearSegmentedColormap.from_list("riegos", ["#e53e3e", "#ecc94b", "#38a169"])
+            # Red gradient: light red -> medium -> dark red
+            cmap = mcolors.LinearSegmentedColormap.from_list("riegos", ["#ffcccc", "#ff6666", "#cc0000"])
             media = self.media_riegos.get()
             if media <= 0: media = 1
             
@@ -822,18 +843,24 @@ class MapaCultivosApp:
                     
             # Mapeo dinamico para la leyenda
             color_map = {}
-            for d in self.datos_bd.values():
-                if d.get('siembra_activa'):
-                    r = int(d.get('num_riegos') or 0)
-                    ratio = min(1.0, float(r) / float(media))
-                    color_map[f"{r} riegos"] = mcolors.to_hex(cmap(ratio))
+            for r_str in items.keys():
+                r = int(r_str.split()[0])
+                ratio = min(1.0, float(r) / float(media))
+                color_map[r_str] = mcolors.to_hex(cmap(ratio))
         else:
             con = sum(1 for d in self.datos_bd.values() if d.get('siembra_activa'))
             items = {'Con siembra': con, 'Sin siembra': len(self.datos_bd) - con}
             color_map = {'Con siembra': THEME['green'],
                          'Sin siembra': COLORES_CULTIVO['_SIN_SIEMBRA']}
 
-        for nombre, count in sorted(items.items(), key=lambda x: -x[1]):
+        # Ordenar: si es riegos, numerico; si no, por cantidad descendente
+        if mode == 'riegos':
+            # Orden descendente (mayor número de riegos primero)
+            sorted_items = sorted(items.items(), key=lambda x: -int(x[0].split()[0]))
+        else:
+            sorted_items = sorted(items.items(), key=lambda x: -x[1])
+
+        for nombre, count in sorted_items:
             color = color_map.get(nombre, '#A0AEC0')
             row = tk.Frame(self.legend_frame, bg=THEME['surface'])
             row.pack(anchor='w', fill='x', pady=1)
