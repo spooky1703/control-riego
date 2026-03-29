@@ -68,7 +68,7 @@ THEME = {
     'accent_light': '#ebf4ff',
     'red':       '#e53e3e',
     'green':     '#38a169',
-    'map_bg':    '#f7fafc',
+    'map_bg':    '#f0f2f5',  # Mismo que el fondo general para unificar
     'map_edge':  '#a0aec0',
 }
 
@@ -240,7 +240,7 @@ class MapaCultivosApp:
     def _build_ui(self):
         # ── Barra superior ──
         top = tk.Frame(self.root, bg=THEME['surface'], pady=8, padx=16,
-                       highlightbackground=THEME['border'], highlightthickness=1)
+                       highlightthickness=0)
         top.pack(fill='x')
 
         # Fila 1: Titulo y Buscador
@@ -337,6 +337,9 @@ class MapaCultivosApp:
         map_frame.pack(side='left', fill='both', expand=True)
 
         self.fig, self.ax = plt.subplots(figsize=(12, 8), facecolor=THEME['map_bg'])
+        # Forzar que el Eje ocupe TODO el espacio de la figura sin margenes
+        self.ax.set_position([0, 0, 1, 1])
+        self.fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
         self.ax.set_facecolor(THEME['map_bg'])
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=map_frame)
@@ -359,7 +362,7 @@ class MapaCultivosApp:
 
         # Barra de zoom
         zoom_frame = tk.Frame(map_frame, bg=THEME['surface'], pady=4,
-                               highlightbackground=THEME['border'], highlightthickness=1)
+                              highlightthickness=0)
         zoom_frame.pack(fill='x')
 
         tk.Label(zoom_frame, text='Zoom:', font=('Helvetica', 9),
@@ -389,8 +392,7 @@ class MapaCultivosApp:
 
         # ── Panel lateral ──
         self.panel = tk.Frame(main, bg=THEME['surface'], width=270,
-                               highlightbackground=THEME['border'],
-                               highlightthickness=1)
+                               highlightthickness=0)
         self.panel.pack(side='right', fill='y')
         self.panel.pack_propagate(False)
 
@@ -746,6 +748,10 @@ class MapaCultivosApp:
 
     def _redibujar(self):
         self.ax.clear()
+        # Forzar que el Eje ocupe TODO el espacio de la figura cada vez que se limpie
+        self.ax.set_position([0, 0, 1, 1])
+        self.fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+        
         # Cambiar cursor del canvas a solo mover (fleur)
         self.canvas.get_tk_widget().config(cursor='fleur')
         self.ax.set_facecolor(THEME['map_bg'])
