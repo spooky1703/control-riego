@@ -102,6 +102,7 @@ COLORES_CULTIVO = {
     'NABO':           '#E9D8FD',
     'HABA':           '#9B2C2C',
     'ARBOL FRUTAL':   '#22543D',
+    'TRICALI':        '#B8860B',
     'PASTO':          '#48BB78',
     '_SIN_SIEMBRA':   '#E2E8F0',
     '_DESCONOCIDO':   '#EDF2F7',
@@ -169,7 +170,9 @@ def cargar_datos_bd():
         ''')
         datos = {}
         for row in cur.fetchall():
-            lote = row['numero_lote']
+            lote = str(row['numero_lote']).strip()
+            if lote.endswith('.0'):
+                lote = lote[:-2]
             datos[lote] = {
                 'id': row['id'],
                 'nombre': row['nombre'],

@@ -137,6 +137,21 @@ def init_db():
                 """)
 
 # ==================== FUNCIONES DE CAMPESINOS ====================
+def reparar_lotes_flotantes():
+    """Corrige lotes importados como flotantes por Pandas (ex: '25.0' -> '25')"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id, numero_lote FROM campesinos WHERE numero_lote LIKE '%.0'")
+        for row in cursor.fetchall():
+            nuevo_lote = row['numero_lote'][:-2]
+            cursor.execute("UPDATE campesinos SET numero_lote = ? WHERE id = ?", (nuevo_lote, row['id']))
+        conn.commit()
+    except Exception as e:
+        print(f"Error reparando lotes: {e}")
+    finally:
+        conn.close()
+
 def buscar_campesino(termino: str) -> List[Dict]:
     """
     Busca campesinos de forma INTELIGENTE:
@@ -781,6 +796,8 @@ def cargar_campesinos_desde_csv(ruta_csv: str):
                 try:
                     row = df_raw.iloc[idx]
                     lote = str(row[1]).strip()
+                    if lote.endswith('.0'):
+                        lote = lote[:-2]
                     nombre = str(row[2]).strip()
                     superficie = str(row[3]).strip()
                     
