@@ -617,7 +617,7 @@ class MapaCultivosApp:
         self._redibujar()
 
         matched = sum(1 for p in self.parcelas_geo
-                      if p.get('lote_id') and p['lote_id'] in self.datos_bd)
+                      if p.get('lote_id') and convertir_lote_id(str(p['lote_id'])) in self.datos_bd)
         self.label_status.config(
             text=f'{len(self.parcelas_geo)} parcelas  |  '
                  f'{len(self.datos_bd)} campesinos  |  '
@@ -780,7 +780,8 @@ class MapaCultivosApp:
         self._patches = {}
 
         for parcela in self.parcelas_geo:
-            lote_id = parcela.get('lote_id')
+            lote_id_raw = parcela.get('lote_id')
+            lote_id = convertir_lote_id(str(lote_id_raw)) if lote_id_raw else None
             coords = parcela.get('coords', [])
             if not coords or len(coords) < 3:
                 continue
@@ -813,7 +814,8 @@ class MapaCultivosApp:
             # Filtrar parcelas de esta sección para calcular el encuadre
             coords_aisladas = []
             for p in self.parcelas_geo:
-                lid = p.get('lote_id')
+                lid_raw = p.get('lote_id')
+                lid = convertir_lote_id(str(lid_raw)) if lid_raw else None
                 if self.datos_bd.get(lid, {}).get('barrio') == fb:
                     coords_aisladas.extend(p.get('coords', []))
             
