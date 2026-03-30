@@ -47,7 +47,7 @@ from modules.modern_sidebar import ModernSidebar
 from modules.utils import resource_path
 
 # Lista de cultivos comunes
-CULTIVOS = ['MAÍZ', 'FRIJOL', 'FRIJOL EJOTERO','TRIGO', 'SORGO', 'ALFALFA', 'CHILE', 'TOMATE', 'CEBOLLA', 'AJO', 'NABO' ,'AVENA','HABA','CALABAZA','CEBADA','ARBOL FRUTAL','PASTO','BROCOLI','COLIFLOR']
+CULTIVOS = ['MAÍZ', 'FRIJOL', 'FRIJOL EJOTERO','TRIGO', 'ALFALFA', 'CHILE', 'TOMATE', 'CEBOLLA', 'NABO' ,'AVENA','HABA','CALABAZA','CEBADA','ARBOL FRUTAL','PASTO', 'TRICALI']
 
 # ==================== FUNCIONES HELPER ====================
 
@@ -602,7 +602,12 @@ class VentanaPrincipal:
             
             ventana = tk.Toplevel(self.root)
             ventana.title("Mapa Interactivo de Parcelas - Seccion 4")
-            ventana.geometry("1400x900")
+            
+            # Hacer la ventana mas grande o state zoomed si es posible
+            ventana.geometry("1500x950")
+            if ventana.tk.call('tk', 'windowingsystem') == 'win32':
+                ventana.state('zoomed')
+            
             ventana.transient(self.root)
             
             app = MapaCultivosApp(ventana)
@@ -3414,7 +3419,11 @@ class VentanaGestorReportes:
         ttk.Button(frame_btnssup, text="📁 Abrir Carpeta", 
                 command=self.abrir_carpeta_reportes, width=15).grid(
             row=1, column=3, padx=5, pady=5)
-        
+            
+        # BOTON HISTORIAL DE REPORTES
+        ttk.Button(frame_btnssup, text="📅 HISTORIAL", 
+                command=self.abrir_historial, width=15).grid(
+            row=0, column=4, rowspan=2, ipady=15, padx=15, pady=5)
         
         # Frame de lista de reportes
         frame_lista = ttk.LabelFrame(frame, text="Reportes Disponibles", padding="10")
@@ -3720,6 +3729,10 @@ class VentanaGestorReportes:
                 subprocess.Popen(['xdg-open', reportes_dir])
         except Exception as e:
             messagebox.showerror("Error", f"Error al abrir carpeta:\n{str(e)}")
+
+    def abrir_historial(self):
+        """Abre el visor de fechas con datos para exportar reportes pasados"""
+        VentanaHistorialReportes(self.ventana)
 
     def generar_reporte_cuotas_dia(self):
         """Genera reporte PDF de cuotas cobradas hoy - CON THREADING"""
@@ -4826,3 +4839,152 @@ class VentanaReporteCuotas:
         
         from modules.utils import ejecutar_en_hilo
         ejecutar_en_hilo(self.ventana, operacion_pesada, on_exito, on_error)
+
+class VentanaHistorialReportes:
+    """Ventana para seleccionar y exportar reportes de fechas pasadas"""
+    
+    def __init__(self, parent):
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title("📅 Historial de Reportes Exportables")
+        self.ventana.geometry("500x400")
+        self.ventana.transient(parent)
+        
+        self.fechas_disponibles = []
+        self._cargar_fechas_db()
+        self.crear_widgets()
+        
+    def _cargar_fechas_db(self):
+        """Consulta la BD para obtener todas las fechas con recibos o cuotas"""
+        from modules.models import get_connection
+        from modules.cuotas import get_cuotas_connection
+        self.fechas_disponibles = []
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            
+            # Obtener fechas de recibos (riegos)
+            cur.execute("SELECT DISTINCT fecha FROM recibos WHERE eliminado=0")
+            fechas_riegos = {row['fecha'] for row in cur.fetchall() if row['fecha']}
+            conn.close()
+            
+            # Obtener fechas de recibos de cuotas
+            conn_c = get_cuotas_connection()
+            cur_c = conn_c.cursor()
+            cur_c.execute("SELECT DISTINCT fecha FROM recibos_cuotas WHERE eliminado=0")
+            fechas_cuotas = {row['fecha'] for row in cur_c.fetchall() if row['fecha']}
+            conn_c.close()
+            
+            # Unir y ordenar descendentemente
+            todas_fechas = sorted(list(fechas_riegos.union(fechas_cuotas)), reverse=True)
+            self.fechas_disponibles = todas_fechas
+        except Exception as e:
+            print("Error cargando fechas de historial:", e)
+
+    def crear_widgets(self):
+        frame = ttk.Frame(self.ventana, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(frame, text="Exportar Reportes con Efecto Retroactivo", 
+                  font=("Helvetica", 12, "bold")).pack(pady=(0, 15))
+                  
+        ttk.Label(frame, text="Seleccione una fecha con datos registrados:").pack(anchor=tk.W)
+        
+        # Combobox para fechas
+        self.fecha_var = tk.StringVar()
+        self.combo_fechas = ttk.Combobox(frame, textvariable=self.fecha_var, 
+                                         values=self.fechas_disponibles, 
+                                         state="readonly", width=30, font=("Helvetica", 11))
+        self.combo_fechas.pack(fill=tk.X, pady=5)
+        
+        if self.fechas_disponibles:
+            self.combo_fechas.current(0)
+        else:
+            self.combo_fechas.set("No hay datos históricos")
+            
+        ttk.Label(frame, text="¿Qué reporte desea generar para esta fecha?", 
+                  font=("Helvetica", 10, "bold")).pack(anchor=tk.W, pady=(20, 10))
+
+        # Botones de exportación
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(fill=tk.X)
+        
+        ttk.Button(btn_frame, text="📄 Venta de Riego (PDF)", 
+                   command=lambda: self.exportar('riego_pdf')).grid(row=0, column=0, padx=5, pady=5, sticky=tk.EW)
+                   
+        ttk.Button(btn_frame, text="📊 Venta de Riego (Excel)", 
+                   command=lambda: self.exportar('riego_excel')).grid(row=0, column=1, padx=5, pady=5, sticky=tk.EW)
+                   
+        ttk.Button(btn_frame, text="💰 Cuotas del Día (PDF)", 
+                   command=lambda: self.exportar('cuotas_pdf')).grid(row=1, column=0, padx=5, pady=5, sticky=tk.EW)
+                   
+        ttk.Button(btn_frame, text="📊 Cuotas del Día (Excel)", 
+                   command=lambda: self.exportar('cuotas_excel')).grid(row=1, column=1, padx=5, pady=5, sticky=tk.EW)
+                   
+        btn_frame.columnconfigure(0, weight=1)
+        btn_frame.columnconfigure(1, weight=1)
+        
+    def exportar(self, tipo):
+        fecha_sel = self.fecha_var.get()
+        if not fecha_sel or fecha_sel == "No hay datos históricos":
+            messagebox.showwarning("Atención", "Debe seleccionar una fecha válida.")
+            return
+            
+        try:
+            from modules.utils import ejecutar_en_hilo
+            from modules.reports import (generar_reporte_diario, exportar_a_excel, abrir_pdf, 
+                                         generar_reporte_cuotas_dia_pdf, exportar_cuotas_dia_excel)
+            from modules.models import obtener_recibos_fecha
+            from modules.cuotas import obtener_recibos_cuota_fecha
+            
+            self.ventana.config(cursor="wait")
+            
+            def on_exito(ruta):
+                self.ventana.config(cursor="")
+                if ruta.endswith('.pdf'):
+                    abrir_pdf(ruta)
+                elif platform.system() == 'Windows':
+                    os.startfile(ruta)
+                elif platform.system() == 'Darwin':
+                    subprocess.Popen(['open', ruta])
+                messagebox.showinfo("Éxito", f"Reporte generado para {fecha_sel}\nRuta: {ruta}")
+
+            def on_error(err):
+                self.ventana.config(cursor="")
+                messagebox.showerror("Error", f"Fallo al generar reporte:\n{err}")
+
+            if tipo == 'riego_pdf':
+                recibos = obtener_recibos_fecha(fecha_sel)
+                if not recibos:
+                    self.ventana.config(cursor="")
+                    messagebox.showinfo("Info", "No hay ventas de riego registradas para esa fecha.")
+                    return
+                # Ejecutar
+                ejecutar_en_hilo(self.ventana, lambda: generar_reporte_diario(fecha_sel, recibos), on_exito, on_error)
+                
+            elif tipo == 'riego_excel':
+                recibos = obtener_recibos_fecha(fecha_sel)
+                if not recibos:
+                    self.ventana.config(cursor="")
+                    messagebox.showinfo("Info", "No hay ventas de riego registradas para esa fecha.")
+                    return
+                ejecutar_en_hilo(self.ventana, lambda: exportar_a_excel(fecha_sel, recibos), on_exito, on_error)
+                
+            elif tipo == 'cuotas_pdf':
+                recibos = obtener_recibos_cuota_fecha(fecha_sel)
+                if not recibos:
+                    self.ventana.config(cursor="")
+                    messagebox.showinfo("Info", "No hay cuotas cobradas registradas para esa fecha.")
+                    return
+                ejecutar_en_hilo(self.ventana, lambda: generar_reporte_cuotas_dia_pdf(fecha_sel), on_exito, on_error)
+                
+            elif tipo == 'cuotas_excel':
+                recibos = obtener_recibos_cuota_fecha(fecha_sel)
+                if not recibos:
+                    self.ventana.config(cursor="")
+                    messagebox.showinfo("Info", "No hay cuotas cobradas registradas para esa fecha.")
+                    return
+                ejecutar_en_hilo(self.ventana, lambda: exportar_cuotas_dia_excel(fecha_sel), on_exito, on_error)
+
+        except Exception as e:
+            self.ventana.config(cursor="")
+            messagebox.showerror("Error General", str(e))

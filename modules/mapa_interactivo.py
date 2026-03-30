@@ -20,6 +20,20 @@ import os
 import io
 import sqlite3
 
+def _parchear_tkinter_popdown():
+    """Protege contra el bug 'KeyError: popdown' en Tkinter/Matplotlib."""
+    old_nametowidget = tk.Misc.nametowidget
+    def new_nametowidget(self, name):
+        try:
+            return old_nametowidget(self, name)
+        except KeyError:
+            if 'popdown' in str(name):
+                return None
+            raise
+    tk.Misc.nametowidget = new_nametowidget
+
+_parchear_tkinter_popdown()
+
 # ═══════════════════════════════════════════════════════════
 # CONFIGURACION
 # ═══════════════════════════════════════════════════════════
@@ -77,7 +91,6 @@ COLORES_CULTIVO = {
     'MAIZ':           '#ECC94B',
     'FRIJOL':         '#A0522D',
     'FRIJOL EJOTERO': '#6B8E23',
-    'SORGO':          '#68D391',
     'TRIGO':          '#D69E2E',
     'ALFALFA':        '#2F855A',
     'TOMATE':         '#FC8181',
@@ -85,15 +98,11 @@ COLORES_CULTIVO = {
     'CEBADA':         '#D6BCAE',
     'AVENA':          '#B7C68B',
     'CALABAZA':       '#F6AD55',
-    'JITOMATE':       '#F56565',
     'CEBOLLA':        '#F7FAFC',
-    'AJO':            '#CBD5E0',
     'NABO':           '#E9D8FD',
     'HABA':           '#9B2C2C',
     'ARBOL FRUTAL':   '#22543D',
     'PASTO':          '#48BB78',
-    'BROCOLI':        '#276749',
-    'COLIFLOR':       '#F0FFF4',
     '_SIN_SIEMBRA':   '#E2E8F0',
     '_DESCONOCIDO':   '#EDF2F7',
 }
@@ -368,35 +377,15 @@ class MapaCultivosApp:
         self.canvas.mpl_connect('button_release_event', self._on_release)
         self.canvas.mpl_connect('motion_notify_event', self._on_motion)
 
-        # Barra de zoom
-        zoom_frame = tk.Frame(map_frame, bg=THEME['surface'], pady=4,
-                              highlightthickness=0)
-        zoom_frame.pack(fill='x')
-
-        tk.Label(zoom_frame, text='Zoom:', font=('Helvetica', 9),
-                 bg=THEME['surface'], fg=THEME['subtext']).pack(side='left', padx=(10, 4))
-
-        self._zoom_var = tk.DoubleVar(value=1.0)
-        self.zoom_scale = tk.Scale(
-            zoom_frame, from_=0.5, to=20.0, resolution=0.1,
-            orient='horizontal', variable=self._zoom_var,
-            command=self._on_zoom_slider,
-            bg=THEME['surface'], fg=THEME['text'],
-            troughcolor=THEME['border'], highlightthickness=0,
-            sliderrelief='flat', length=300,
-            showvalue=False)
-        self.zoom_scale.pack(side='left', fill='x', expand=True, padx=4)
-
-        self._zoom_label = tk.Label(zoom_frame, text='1.0x',
-                                     font=('Menlo', 9, 'bold'),
-                                     bg=THEME['surface'], fg=THEME['text'], width=5)
-        self._zoom_label.pack(side='left', padx=(0, 6))
-
-        tk.Button(zoom_frame, text='Reiniciar', command=self._zoom_reset,
-                  bg=THEME['card'], fg=THEME['text'],
-                  activebackground=THEME['border'],
-                  relief='flat', padx=8, pady=1,
-                  font=('Helvetica', 9), cursor='hand2').pack(side='left', padx=(0, 10))
+        # Habilitar zoom con la rueda del ratón (scroll)
+        self.canvas.mpl_connect('scroll_event', self._on_scroll)
+        
+        # Guardaremos el nivel de zoom de forma interna
+        self._current_zoom = 1.0
+        
+        # Botón para reiniciar zoom y vista (flotante o en panel superior en vez de un frame entero)
+        ttk.Button(top, text='Reiniciar Vista', command=self._zoom_reset, 
+                   width=12).pack(side='right', padx=10)
 
         # ── Panel lateral ──
         self.panel = tk.Frame(main, bg=THEME['surface'], width=270,
@@ -462,55 +451,59 @@ class MapaCultivosApp:
         self.ax.set_xlim([cx - new_xrange / 2, cx + new_xrange / 2])
         self.ax.set_ylim([cy - new_yrange / 2, cy + new_yrange / 2])
         self.canvas.draw_idle()
-
-    def _on_zoom_scroll(self, *args):
-        """Callback del Scrollbar de zoom.
-        args contiene (first, last) como fracciones del rango.
-        Convertimos a nivel de zoom entre 0.5 y 20.0.
-        """
-        # args[0] es la posición inicial del thumb (0.0‑1.0)
-        try:
-            pos = float(args[0])
-        except Exception:
+    def _on_scroll(self, event):
+        """Maneja el evento de la rueda del ratón para hacer zoom in/out."""
+        if not event.inaxes:
             return
-        # Mapear posición a rango de zoom
-        zoom_min, zoom_max = 0.5, 20.0
-        zoom_level = zoom_min + (zoom_max - zoom_min) * pos
-        self._zoom_var.set(zoom_level)
-        self._zoom_label.config(text=f'{zoom_level:.1f}x')
-        self._aplicar_zoom(zoom_level)
-
-    def _on_zoom_slider(self, val):
-        """Llamado cuando se mueve el slider de zoom."""
-        zoom_level = float(val)
-        self._zoom_label.config(text=f'{zoom_level:.1f}x')
-
-        if not hasattr(self, '_base_xlim'):
+            
+        # Factor de zoom por cada "click" de la rueda
+        base_scale = 1.2
+        
+        if event.button == 'up':
+            # Zoom in
+            scale_factor = 1.0 / base_scale
+            self._current_zoom *= base_scale
+        elif event.button == 'down':
+            # Zoom out
+            scale_factor = base_scale
+            self._current_zoom /= base_scale
+        else:
             return
+            
+        # Limitar acercamiento máximo y mínimo
+        if self._current_zoom < 0.5:
+            self._current_zoom = 0.5
+            return
+        if self._current_zoom > 30.0:
+            self._current_zoom = 30.0
+            return
+            
+        cur_xlim = self.ax.get_xlim()
+        cur_ylim = self.ax.get_ylim()
 
-        base_xrange = self._base_xlim[1] - self._base_xlim[0]
-        base_yrange = self._base_ylim[1] - self._base_ylim[0]
+        xdata = event.xdata
+        ydata = event.ydata
 
-        xlim = self.ax.get_xlim()
-        ylim = self.ax.get_ylim()
-        cx = (xlim[0] + xlim[1]) / 2
-        cy = (ylim[0] + ylim[1]) / 2
+        # Calcular nueva extensión, manteniendo el cursor en la misma posición relativa
+        new_width = (cur_xlim[1] - cur_xlim[0]) * scale_factor
+        new_height = (cur_ylim[1] - cur_ylim[0]) * scale_factor
 
-        new_xrange = base_xrange / zoom_level
-        new_yrange = base_yrange / zoom_level
+        relx = (cur_xlim[1] - xdata) / (cur_xlim[1] - cur_xlim[0])
+        rely = (cur_ylim[1] - ydata) / (cur_ylim[1] - cur_ylim[0])
 
-        self.ax.set_xlim([cx - new_xrange / 2, cx + new_xrange / 2])
-        self.ax.set_ylim([cy - new_yrange / 2, cy + new_yrange / 2])
+        self.ax.set_xlim([xdata - new_width * (1 - relx), xdata + new_width * relx])
+        self.ax.set_ylim([ydata - new_height * (1 - rely), ydata + new_height * rely])
+        
         self.canvas.draw_idle()
 
     def _zoom_reset(self):
         """Restablece el zoom a 1x y centra la vista."""
-        self._zoom_var.set(1.0)
-        self._zoom_label.config(text='1.0x')
+        self._current_zoom = 1.0
         # Resetear límites de vista a los base guardados
-        self.ax.set_xlim(self.base_xlim)
-        self.ax.set_ylim(self.base_ylim)
-        self.canvas.draw_idle()
+        if hasattr(self, 'base_xlim'):
+            self.ax.set_xlim(self.base_xlim)
+            self.ax.set_ylim(self.base_ylim)
+            self.canvas.draw_idle()
 
     def _on_press(self, event):
         """Inicio del pan (button 1 = izquierdo, button 2/3 = derecho)."""
@@ -658,8 +651,7 @@ class MapaCultivosApp:
                 nx = (max_x + margen_x) - (min_x - margen_x)
                 if nx > 0:
                     zoom_lvl = min(20.0, max(0.5, bx / nx))
-                    self._zoom_var.set(zoom_lvl)
-                    self._zoom_label.config(text=f'{zoom_lvl:.1f}x')
+                    self._current_zoom = zoom_lvl
                     
             self.canvas.draw_idle()
 
@@ -811,8 +803,7 @@ class MapaCultivosApp:
         # Guardar limites base para el slider de zoom
         self._base_xlim = self.ax.get_xlim()
         self._base_ylim = self.ax.get_ylim()
-        self._zoom_var.set(1.0)
-        self._zoom_label.config(text='1.0x')
+        self._current_zoom = 1.0
 
         mode_names = {'cultivo': 'Cultivo', 'barrio': 'Barrio', 'estado': 'Estado', 'riegos': 'Riegos'}
         self.ax.set_title(
