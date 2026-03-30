@@ -23,7 +23,7 @@ PyInstaller.__main__.run([
     
     # DATOS Y RECURSOS
     '--add-data=assets;assets',         # Incluir carpeta assets
-    '--add-data=database;database',     # ✅ NUEVO: Incluir base de datos inicial
+    '--add-data=database/mapa_geometria.json;database', # ✅ NUEVO: Incluir SOLO la geometría del mapa, JAMÁS bases de datos de desarrollo.
     
     # DEPENDENCIAS CRÍTICAS PARA TU APP
     '--hidden-import=chardet',          # Para detección de encoding
