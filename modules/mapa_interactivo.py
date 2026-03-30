@@ -117,6 +117,14 @@ COLORES_BARRIO = {
     'HUITEL':      '#4FD1C5',
 }
 
+COLORES_SECCION = {
+    'TEZONTEPEC': '#4682B4',
+    'PANUAYA': '#CD5C5C',
+    'SAN GABRIEL': '#32CD32',
+    'ATENGO': '#DAA520',
+    'Sin seccion': '#A0AEC0'
+}
+
 
 def _color_cultivo(nombre_raw):
     """Devuelve color para un cultivo dado (normaliza para buscar)."""
@@ -153,7 +161,7 @@ def cargar_datos_bd():
     cur = conn.cursor()
     try:
         cur.execute('''
-            SELECT c.id, c.numero_lote, c.nombre, c.barrio, c.superficie,
+            SELECT c.id, c.numero_lote, c.nombre, c.barrio, c.localidad, c.superficie,
                    s.cultivo, s.activa, s.numero_riegos, s.ciclo
             FROM campesinos c
             LEFT JOIN siembras s ON c.id = s.campesino_id AND s.activa = 1
@@ -166,6 +174,7 @@ def cargar_datos_bd():
                 'id': row['id'],
                 'nombre': row['nombre'],
                 'barrio': row['barrio'] or 'Sin barrio',
+                'seccion': row['localidad'] or 'Sin seccion',
                 'superficie': row['superficie'] or 0,
                 'cultivo': row['cultivo'] or None,
                 'siembra_activa': bool(row['activa']),
@@ -322,8 +331,8 @@ class MapaCultivosApp:
         self.combo_fcultivo.pack(side='left', padx=(0, 10))
         self.combo_fcultivo.bind('<<ComboboxSelected>>', lambda e: self._redibujar())
 
-        tk.Label(row2, text='Filtro Barrio:', font=('Helvetica', 9, 'bold'),
-                 bg=THEME['surface'], fg=THEME['subtext']).pack(side='left', padx=(0, 4))
+        tk.Label(row2, text='🔍 Aislar Sección:', font=('Helvetica', 9, 'bold'),
+                 bg=THEME['surface'], fg=THEME['text']).pack(side='left', padx=(0, 4))
         self.combo_fbarrio = ttk.Combobox(row2, textvariable=self.filtro_barrio,
                                           width=12, state='readonly', style='Map.TCombobox')
         self.combo_fbarrio.pack(side='left', padx=(0, 10))
@@ -726,6 +735,10 @@ class MapaCultivosApp:
             barrio = datos.get('barrio', '')
             return COLORES_BARRIO.get(barrio, '#A0AEC0'), alpha
 
+        elif mode == 'seccion':
+            seccion = datos.get('seccion', '')
+            return COLORES_SECCION.get(seccion, '#A0AEC0'), alpha
+
         elif mode == 'riegos':
             import matplotlib.colors as mcolors
             # Red gradient: light → medium → dark red
@@ -788,7 +801,31 @@ class MapaCultivosApp:
                              fontweight='bold', alpha=0.6,
                              clip_on=True)
 
-        self.ax.autoscale_view()
+        # --- Lógica de Aislamiento/Auto-Zoom por Sección ---
+        fb = self.filtro_barrio.get()
+        if fb != 'Todos':
+            # Filtrar parcelas de esta sección para calcular el encuadre
+            coords_aisladas = []
+            for p in self.parcelas_geo:
+                lid = p.get('lote_id')
+                if self.datos_bd.get(lid, {}).get('barrio') == fb:
+                    coords_aisladas.extend(p.get('coords', []))
+            
+            if coords_aisladas:
+                import numpy as np
+                pts = np.array(coords_aisladas)
+                xmin, ymin = pts.min(axis=0)
+                xmax, ymax = pts.max(axis=0)
+                
+                # Dar un margen del 10%
+                pad_x = (xmax - xmin) * 0.1
+                pad_y = (ymax - ymin) * 0.1
+                self.ax.set_xlim(xmin - pad_x, xmax + pad_x)
+                self.ax.set_ylim(ymin - pad_y, ymax + pad_y)
+            else:
+                self.ax.autoscale_view()
+        else:
+            self.ax.autoscale_view()
 
         # Recrear el tooltip ya que ax.clear() lo borró
         self.tooltip = self.ax.annotate(
@@ -805,7 +842,7 @@ class MapaCultivosApp:
         self._base_ylim = self.ax.get_ylim()
         self._current_zoom = 1.0
 
-        mode_names = {'cultivo': 'Cultivo', 'barrio': 'Barrio', 'estado': 'Estado', 'riegos': 'Riegos'}
+        mode_names = {'cultivo': 'Cultivo', 'barrio': 'Barrio', 'seccion': 'Sección', 'estado': 'Estado', 'riegos': 'Riegos'}
         self.ax.set_title(
             f'Seccion 4  -  {len(self.parcelas_geo)} parcelas  -  {mode_names.get(self.mode.get(), "")}',
             color=THEME['text'], pad=10, fontsize=11, fontweight='bold')
@@ -831,6 +868,12 @@ class MapaCultivosApp:
                 b = d.get('barrio', 'Sin barrio')
                 items[b] = items.get(b, 0) + 1
             color_map = COLORES_BARRIO
+        elif mode == 'seccion':
+            items = {}
+            for d in self.datos_bd.values():
+                s = d.get('seccion', 'Sin seccion')
+                items[s] = items.get(s, 0) + 1
+            color_map = COLORES_SECCION
         elif mode == 'riegos':
             import matplotlib.colors as mcolors
             # Red gradient: light red -> medium -> dark red
