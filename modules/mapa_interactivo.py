@@ -37,10 +37,13 @@ _parchear_tkinter_popdown()
 # ═══════════════════════════════════════════════════════════
 # CONFIGURACION
 # ═══════════════════════════════════════════════════════════
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-JSON_CACHE = os.path.join(BASE_DIR, 'database', 'mapa_geometria.json')
-DB_PATH = os.path.join(BASE_DIR, 'database', 'riego.db')
-LOGO_PATH = os.path.join(BASE_DIR, 'assets', 'zapata.png')
+from modules.utils import resource_path
+
+# Cuando el script se corre congelado via PyInstaller, sys._MEIPASS envuelve los recursos.
+# PERO la BD (datos del usuario) DEBE guardarse en y leerse desde la locación viva CWD.
+JSON_CACHE = resource_path(os.path.join('database', 'mapa_geometria.json'))
+DB_PATH = os.path.join('database', 'riego.db')
+LOGO_PATH = resource_path(os.path.join('assets', 'zapata.png'))
 
 
 def _normalizar_cultivo(nombre):
