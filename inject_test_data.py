@@ -16,7 +16,7 @@ from modules.models import get_connection, init_db
 # Configuración del dataset de prueba
 # -------------------------------------------------
 MAX_RIEGOS = 6                     # Valor máximo que mostrará el mapa
-CULTIVOS = ['MAÍZ', 'FRIJOL', 'FRIJOL EJOTERO','TRIGO', 'ALFALFA', 'CHILE', 'TOMATE', 'CEBOLLA', 'NABO' ,'AVENA','HABA','CALABAZA','CEBADA','ARBOL FRUTAL','PASTO']
+CULTIVOS = ['MAÍZ', 'FRIJOL', 'FRIJOL EJOTERO','TRIGO', 'ALFALFA', 'CHILE', 'TOMATE', 'CEBOLLA', 'NABO' ,'AVENA','HABA','CALABAZA','CEBADA','ARBOL FRUTAL','PASTO', 'TRICALI']
 
 def chunked(iterable, size):
     """Divide una lista en trozos de *size* elementos."""
@@ -43,7 +43,7 @@ def main():
     # 2️⃣  Actualizar siembras en bloques contiguos
     # -------------------------------------------------
     # Definimos el tamaño del bloque (manchón). 5 parcelas = 1 bloque.
-    bloque_tamano = 5
+    bloque_tamano = 3
     for bloque in chunked(campesinos, bloque_tamano):
         # Elegimos un número de riegos y un cultivo para todo el bloque
         riego_val = random.randint(0, MAX_RIEGOS)
