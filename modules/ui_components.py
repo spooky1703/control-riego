@@ -5024,8 +5024,8 @@ class VentanaHistorialReportes:
             from modules.utils import ejecutar_en_hilo
             from modules.reports import (generar_reporte_diario, generar_corte_caja_excel, abrir_pdf, 
                                          generar_reporte_cuotas_dia_pdf, generar_excel_cuotas_dia)
-            from modules.models import obtener_recibos_fecha
-            from modules.cuotas import obtener_recibos_cuota_fecha
+            from modules.models import obtener_recibos_dia
+            from modules.cuotas import obtener_recibos_cuotas_dia
             
             self.ventana.config(cursor="wait")
             
@@ -5044,7 +5044,7 @@ class VentanaHistorialReportes:
                 messagebox.showerror("Error", f"Fallo al generar reporte:\n{err}")
 
             if tipo == 'riego_pdf':
-                recibos = obtener_recibos_fecha(fecha_sel)
+                recibos = obtener_recibos_dia(fecha_sel)
                 if not recibos:
                     self.ventana.config(cursor="")
                     messagebox.showinfo("Info", "No hay ventas de riego registradas para esa fecha.")
@@ -5053,7 +5053,7 @@ class VentanaHistorialReportes:
                 ejecutar_en_hilo(self.ventana, lambda: generar_reporte_diario(fecha_sel, recibos), on_exito, on_error)
                 
             elif tipo == 'riego_excel':
-                recibos = obtener_recibos_fecha(fecha_sel)
+                recibos = obtener_recibos_dia(fecha_sel)
                 if not recibos:
                     self.ventana.config(cursor="")
                     messagebox.showinfo("Info", "No hay ventas de riego registradas para esa fecha.")
@@ -5061,7 +5061,7 @@ class VentanaHistorialReportes:
                 ejecutar_en_hilo(self.ventana, lambda: generar_corte_caja_excel(fecha_sel, recibos), on_exito, on_error)
                 
             elif tipo == 'cuotas_pdf':
-                recibos = obtener_recibos_cuota_fecha(fecha_sel)
+                recibos = obtener_recibos_cuotas_dia(fecha_sel)
                 if not recibos:
                     self.ventana.config(cursor="")
                     messagebox.showinfo("Info", "No hay cuotas cobradas registradas para esa fecha.")
@@ -5069,7 +5069,7 @@ class VentanaHistorialReportes:
                 ejecutar_en_hilo(self.ventana, lambda: generar_reporte_cuotas_dia_pdf(fecha_sel), on_exito, on_error)
                 
             elif tipo == 'cuotas_excel':
-                recibos = obtener_recibos_cuota_fecha(fecha_sel)
+                recibos = obtener_recibos_cuotas_dia(fecha_sel)
                 if not recibos:
                     self.ventana.config(cursor="")
                     messagebox.showinfo("Info", "No hay cuotas cobradas registradas para esa fecha.")
