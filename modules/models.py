@@ -152,6 +152,36 @@ def reparar_lotes_flotantes():
     finally:
         conn.close()
 
+def migrar_alfalfa_vieja():
+    """Convierte todas las siembras de ALFALFA antigua a ALFALFA VIEJA."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE siembras SET cultivo = 'ALFALFA VIEJA' WHERE cultivo = 'ALFALFA'")
+        conn.commit()
+    except Exception as e:
+        print(f"Error migrando alfalfa: {e}")
+    finally:
+        conn.close()
+
+def actualizar_cultivo_siembra(campesino_id: int, nuevo_cultivo: str) -> bool:
+    """Actualiza el nombre del cultivo de la siembra activa sin modificar sus fechas."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            UPDATE siembras 
+            SET cultivo = ? 
+            WHERE campesino_id = ? AND activa = 1
+        ''', (nuevo_cultivo, campesino_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error actualizando cultivo: {e}")
+        return False
+    finally:
+        conn.close()
+
 def buscar_campesino(termino: str) -> List[Dict]:
     """
     Busca campesinos de forma INTELIGENTE:

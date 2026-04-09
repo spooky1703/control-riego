@@ -47,7 +47,7 @@ from modules.modern_sidebar import ModernSidebar
 from modules.utils import resource_path
 
 # Lista de cultivos comunes
-CULTIVOS = ['MAÍZ', 'FRIJOL', 'FRIJOL EJOTERO','TRIGO', 'ALFALFA', 'CHILE', 'TOMATE', 'CEBOLLA', 'NABO' ,'AVENA','HABA','CALABAZA','CEBADA','ARBOL FRUTAL','PASTO', 'TRICALI']
+CULTIVOS = ['MAÍZ', 'FRIJOL', 'FRIJOL EJOTERO','TRIGO', 'ALFALFA VIEJA', 'ALFALFA NUEVA', 'CHILE', 'TOMATE', 'CEBOLLA', 'NABO' ,'AVENA','HABA','CALABAZA','CEBADA','ARBOL FRUTAL','PASTO', 'TRICALI']
 
 # ==================== FUNCIONES HELPER ====================
 
@@ -3223,6 +3223,17 @@ class VentanaEditarLote:
         ttk.Label(opciones_frame, text="Dividir el lote en múltiples sublotes (herencia)",
                  font=('Helvetica', 9), foreground='gray').pack(anchor=tk.W, padx=20)
         
+        # Separador
+        ttk.Separator(opciones_frame, orient='horizontal').pack(fill=tk.X, pady=10)
+        
+        # Botón editar cultivo
+        btn_cultivo = ttk.Button(opciones_frame,
+                               text="🌱 Editar Cultivo",
+                               command=self.editar_cultivo)
+        btn_cultivo.pack(fill=tk.X, pady=5)
+        ttk.Label(opciones_frame, text="Cambiar el tipo de siembra preservando fechas y pagos",
+                 font=('Helvetica', 9), foreground='gray').pack(anchor=tk.W, padx=20)
+        
         # Botón cerrar
         ttk.Button(frame, text="❌ Cerrar",
                   command=self.ventana.destroy).pack(pady=10)
@@ -3261,6 +3272,86 @@ class VentanaEditarLote:
             self.campesino['superficie'],
             self.ventana_principal
         )
+
+    def editar_cultivo(self):
+        """Abre ventana para cambiar el cultivo activo"""
+        self.ventana.destroy()
+        VentanaEditarCultivo(
+            self.ventana.master,
+            self.campesino['id'],
+            self.campesino['nombre'],
+            self.campesino['numero_lote'],
+            self.ventana_principal
+        )
+
+class VentanaEditarCultivo:
+    """Ventana para cambiar el cultivo de una siembra activa preservando históricos"""
+    
+    def __init__(self, parent, campesino_id, campesino_nombre, lote, ventana_principal):
+        self.campesino_id = campesino_id
+        self.nombre = campesino_nombre
+        self.lote = lote
+        self.ventana_principal = ventana_principal
+        
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title(f"🌱 Editar Cultivo - Lote {lote}")
+        self.ventana.geometry("400x320")
+        self.ventana.transient(parent)
+        self.ventana.grab_set()
+        
+        self.crear_widgets()
+        
+    def crear_widgets(self):
+        frame = ttk.Frame(self.ventana, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(frame, text="🌱 EDITAR CULTIVO DE SIEMBRA",
+                 font=('Helvetica', 12, 'bold')).pack(pady=(0, 15))
+                 
+        from modules.models import obtener_siembra_activa
+        siembra_actual = obtener_siembra_activa(self.campesino_id)
+        
+        if not siembra_actual:
+            ttk.Label(frame, text="No hay siembra activa en este lote.", foreground="red").pack(pady=10)
+            ttk.Button(frame, text="Cerrar", command=self.ventana.destroy).pack(pady=10)
+            return
+
+        cultivo_actual = siembra_actual['cultivo']
+        
+        ttk.Label(frame, text=f"Cultivo actual: {cultivo_actual}", font=('Helvetica', 10, 'bold')).pack(anchor=tk.W, pady=5)
+        
+        ttk.Label(frame, text="Seleccione el nuevo cultivo:").pack(anchor=tk.W, pady=(15, 5))
+        self.combo_cultivo = ttk.Combobox(frame, values=CULTIVOS, state="readonly", font=('Helvetica', 10))
+        self.combo_cultivo.pack(fill=tk.X)
+        if cultivo_actual in CULTIVOS:
+            self.combo_cultivo.set(cultivo_actual)
+            
+        ttk.Label(frame, text="⚠️ IMPORTANTE: Esto NO creará una nueva venta.\nSolo renombrará el cultivo para reportes y el mapa.",
+                 foreground="orange", justify=tk.LEFT).pack(anchor=tk.W, pady=(15, 10))
+                 
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Button(btn_frame, text="✅ Guardar Cambios", command=self.guardar).pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        ttk.Button(btn_frame, text="❌ Cancelar", command=self.ventana.destroy).pack(side=tk.LEFT, padx=5)
+
+    def guardar(self):
+        nuevo_cultivo = self.combo_cultivo.get()
+        if not nuevo_cultivo:
+            messagebox.showwarning("Atención", "Debe seleccionar un cultivo")
+            return
+            
+        from modules.models import actualizar_cultivo_siembra
+        
+        if messagebox.askyesno("Confirmar", f"¿Cambiar a '{nuevo_cultivo}'?\nSe mantendrán intactas las fechas y riegos."):
+            if actualizar_cultivo_siembra(self.campesino_id, nuevo_cultivo):
+                messagebox.showinfo("Éxito", "Cultivo actualizado correctamente.")
+                self.ventana.destroy()
+                self.ventana_principal.actualizar_vista()
+                if hasattr(self.ventana_principal, 'cargar_perfil'):
+                    self.ventana_principal.cargar_perfil(self.campesino_id)
+            else:
+                messagebox.showerror("Error", "Error al actualizar")
 
 class VentanaEditarSuperficie:
     """Ventana para editar la superficie de un lote"""
@@ -4931,8 +5022,8 @@ class VentanaHistorialReportes:
             
         try:
             from modules.utils import ejecutar_en_hilo
-            from modules.reports import (generar_reporte_diario, exportar_a_excel, abrir_pdf, 
-                                         generar_reporte_cuotas_dia_pdf, exportar_cuotas_dia_excel)
+            from modules.reports import (generar_reporte_diario, generar_corte_caja_excel, abrir_pdf, 
+                                         generar_reporte_cuotas_dia_pdf, generar_excel_cuotas_dia)
             from modules.models import obtener_recibos_fecha
             from modules.cuotas import obtener_recibos_cuota_fecha
             
@@ -4967,7 +5058,7 @@ class VentanaHistorialReportes:
                     self.ventana.config(cursor="")
                     messagebox.showinfo("Info", "No hay ventas de riego registradas para esa fecha.")
                     return
-                ejecutar_en_hilo(self.ventana, lambda: exportar_a_excel(fecha_sel, recibos), on_exito, on_error)
+                ejecutar_en_hilo(self.ventana, lambda: generar_corte_caja_excel(fecha_sel, recibos), on_exito, on_error)
                 
             elif tipo == 'cuotas_pdf':
                 recibos = obtener_recibos_cuota_fecha(fecha_sel)
@@ -4983,7 +5074,7 @@ class VentanaHistorialReportes:
                     self.ventana.config(cursor="")
                     messagebox.showinfo("Info", "No hay cuotas cobradas registradas para esa fecha.")
                     return
-                ejecutar_en_hilo(self.ventana, lambda: exportar_cuotas_dia_excel(fecha_sel), on_exito, on_error)
+                ejecutar_en_hilo(self.ventana, lambda: generar_excel_cuotas_dia(fecha_sel), on_exito, on_error)
 
         except Exception as e:
             self.ventana.config(cursor="")
