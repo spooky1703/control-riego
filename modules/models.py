@@ -152,15 +152,15 @@ def reparar_lotes_flotantes():
     finally:
         conn.close()
 
-def migrar_alfalfa_vieja():
-    """Convierte todas las siembras de ALFALFA antigua a ALFALFA VIEJA."""
+def revertir_alfalfa_vieja():
+    """Restaura ALFALFA VIEJA de regreso a ALFALFA original en caso de que se haya migrado accidentalmente."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("UPDATE siembras SET cultivo = 'ALFALFA VIEJA' WHERE cultivo = 'ALFALFA'")
+        cursor.execute("UPDATE siembras SET cultivo = 'ALFALFA' WHERE cultivo = 'ALFALFA VIEJA'")
         conn.commit()
     except Exception as e:
-        print(f"Error migrando alfalfa: {e}")
+        print(f"Error revirtiendo alfalfa: {e}")
     finally:
         conn.close()
 

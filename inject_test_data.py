@@ -16,7 +16,7 @@ from modules.models import get_connection, init_db
 # Configuración del dataset de prueba
 # -------------------------------------------------
 MAX_RIEGOS = 6                     # Valor máximo que mostrará el mapa
-CULTIVOS = ['MAÍZ', 'FRIJOL', 'FRIJOL EJOTERO','TRIGO', 'ALFALFA VIEJA', 'ALFALFA NUEVA', 'CHILE', 'TOMATE', 'CEBOLLA', 'NABO' ,'AVENA','HABA','CALABAZA','CEBADA','ARBOL FRUTAL','PASTO', 'TRICALI']
+CULTIVOS = ['MAÍZ', 'FRIJOL', 'FRIJOL EJOTERO','TRIGO', 'ALFALFA', 'ALFALFA NUEVA', 'CHILE', 'TOMATE', 'CEBOLLA', 'NABO' ,'AVENA','HABA','CALABAZA','CEBADA','ARBOL FRUTAL','PASTO', 'TRICALI']
 
 def chunked(iterable, size):
     """Divide una lista en trozos de *size* elementos."""

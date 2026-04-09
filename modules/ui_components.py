@@ -47,7 +47,7 @@ from modules.modern_sidebar import ModernSidebar
 from modules.utils import resource_path
 
 # Lista de cultivos comunes
-CULTIVOS = ['MAÍZ', 'FRIJOL', 'FRIJOL EJOTERO','TRIGO', 'ALFALFA VIEJA', 'ALFALFA NUEVA', 'CHILE', 'TOMATE', 'CEBOLLA', 'NABO' ,'AVENA','HABA','CALABAZA','CEBADA','ARBOL FRUTAL','PASTO', 'TRICALI']
+CULTIVOS = ['MAÍZ', 'FRIJOL', 'FRIJOL EJOTERO','TRIGO', 'ALFALFA', 'ALFALFA NUEVA', 'CHILE', 'TOMATE', 'CEBOLLA', 'NABO' ,'AVENA','HABA','CALABAZA','CEBADA','ARBOL FRUTAL','PASTO', 'TRICALI']
 
 # ==================== FUNCIONES HELPER ====================
 

@@ -95,7 +95,7 @@ COLORES_CULTIVO = {
     'FRIJOL':         '#A0522D',
     'FRIJOL EJOTERO': '#6B8E23',
     'TRIGO':          '#D69E2E',
-    'ALFALFA VIEJA':  '#2F855A',
+    'ALFALFA':        '#2F855A',
     'ALFALFA NUEVA':  '#68D391',
     'TOMATE':         '#FC8181',
     'CHILE':          '#ED8936',
