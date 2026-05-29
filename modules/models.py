@@ -316,24 +316,34 @@ def actualizar_campesino(campesino_id: int, datos: Dict) -> bool:
 
 def eliminar_campesino(campesino_id: int) -> bool:
     """Eliminación lógica de un campesino"""
+    import time
+    
     siembra_activa = obtener_siembra_activa(campesino_id)
     if siembra_activa:
         raise ValueError("No se puede eliminar un campesino con siembra activa")
         
     datos_previos = obtener_campesino_por_id(campesino_id)
+    nuevo_lote = f"{datos_previos['numero_lote']}_ELIMINADO_{int(time.time())}"
     
     conn = get_connection()
     cursor = conn.cursor()
     
     try:
-        cursor.execute('UPDATE campesinos SET activo = 0 WHERE id = ?', (campesino_id,))
+        # Renombramos el lote para liberar el número original (por el constraint UNIQUE)
+        cursor.execute('UPDATE campesinos SET activo = 0, numero_lote = ? WHERE id = ?', (nuevo_lote, campesino_id))
         conn.commit()
     finally:
         conn.close()
         
+    # Sincronizar el renombre con la base de datos de cuotas para que el historial refleje la eliminación
+    try:
+        actualizar_datos_campesino_en_cuotas(campesino_id, {"numero_lote": nuevo_lote})
+    except Exception as e:
+        print(f"Advertencia: No se pudo actualizar el historial de cuotas: {e}")
+        
     registrar_auditoria(
         'ELIMINAR_CAMPESINO',
-        f"Campesino eliminado: {datos_previos['nombre']} (Lote: {datos_previos['numero_lote']})",
+        f"Campesino eliminado: {datos_previos['nombre']} (Lote original: {datos_previos['numero_lote']})",
         json.dumps(datos_previos)
     )
     return True

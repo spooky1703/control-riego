@@ -3159,7 +3159,7 @@ class VentanaEditarLote:
         
         self.ventana = tk.Toplevel(parent)
         self.ventana.title(f"✏️ Editar Lote {campesino['numero_lote']}")
-        self.ventana.geometry("520x450")
+        self.ventana.geometry("520x550")
         self.ventana.transient(parent)
         self.ventana.grab_set()
         
@@ -3234,6 +3234,17 @@ class VentanaEditarLote:
         ttk.Label(opciones_frame, text="Cambiar el tipo de siembra preservando fechas y pagos",
                  font=('Helvetica', 9), foreground='gray').pack(anchor=tk.W, padx=20)
         
+        # Separador
+        ttk.Separator(opciones_frame, orient='horizontal').pack(fill=tk.X, pady=10)
+        
+        # Botón eliminar lote
+        btn_eliminar = ttk.Button(opciones_frame,
+                               text="🗑️ Eliminar Lote",
+                               command=self.eliminar_lote)
+        btn_eliminar.pack(fill=tk.X, pady=5)
+        ttk.Label(opciones_frame, text="Eliminar (desactivar) este lote del sistema",
+                 font=('Helvetica', 9), foreground='red').pack(anchor=tk.W, padx=20)
+        
         # Botón cerrar
         ttk.Button(frame, text="❌ Cerrar",
                   command=self.ventana.destroy).pack(pady=10)
@@ -3283,6 +3294,26 @@ class VentanaEditarLote:
             self.campesino['numero_lote'],
             self.ventana_principal
         )
+
+    def eliminar_lote(self):
+        """Elimina (desactiva) el lote seleccionado"""
+        if messagebox.askyesno("Confirmar Eliminación",
+                               f"¿Está seguro que desea eliminar el lote {self.campesino['numero_lote']} "
+                               f"perteneciente a {self.campesino['nombre']}?\n\n"
+                               "Esta acción desactivará el lote pero mantendrá su historial.",
+                               parent=self.ventana):
+            try:
+                from modules.models import obtener_siembra_activa
+                if obtener_siembra_activa(self.campesino['id']):
+                    messagebox.showerror("Error", "No se puede eliminar un lote con siembra activa.\nFinalice la siembra primero.", parent=self.ventana)
+                    return
+                
+                eliminar_campesino(self.campesino['id'])
+                messagebox.showinfo("Éxito", "Lote eliminado correctamente.", parent=self.ventana)
+                self.ventana_principal.cargar_todos_campesinos()
+                self.ventana.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Error al eliminar el lote:\n{str(e)}", parent=self.ventana)
 
 class VentanaEditarCultivo:
     """Ventana para cambiar el cultivo de una siembra activa preservando históricos"""
