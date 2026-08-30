@@ -362,7 +362,7 @@ class VentanaPrincipal:
         btn_limpiar.grid(row=0, column=2, padx=5)
         add_button_hover(btn_limpiar, '#95a5a6', '#7f8c8d')
         
-        btn_nuevo = tk.Button(search_bar, text="➕ Nuevo Campesino",
+        btn_nuevo = tk.Button(search_bar, text="➕ Nuevo Ejidatario",
                              command=self.abrir_form_nuevo_campesino,
                              font=('Segoe UI', 10, 'bold'),
                              bg='#27ae60',
@@ -2575,6 +2575,9 @@ class VentanaEstadisticas:
         ttk.Button(frame_botones, text="📄 Exportar PDF",
                   command=self.exportar_pdf).pack(side=tk.LEFT, padx=5)
         
+        ttk.Button(frame_botones, text="📖 Exportar Libreta",
+                  command=self.exportar_libreta).pack(side=tk.LEFT, padx=5)
+        
         ttk.Button(frame_botones, text="❌ Cerrar",
                   command=self.ventana.destroy).pack(side=tk.LEFT, padx=5)
     
@@ -2725,6 +2728,48 @@ class VentanaEstadisticas:
             import traceback
             traceback.print_exc()
             messagebox.showerror("Error", f"Error al generar PDF:\n{str(error)}")
+        
+        from modules.utils import ejecutar_en_hilo
+        ejecutar_en_hilo(self.ventana, operacion_pesada, on_exito, on_error)
+    
+    def exportar_libreta(self):
+        """
+        Genera la libreta oficial de CONAGUA en Excel con el padrón completo
+        (lote, nombre, toma y superficie) ya transcrito. Las casillas de siembra
+        y de riegos salen vacías, para llenarlas a mano.
+        """
+        def operacion_pesada():
+            from modules.libreta import generar_libreta_excel
+            
+            campesinos = obtener_todos_campesinos()
+            return generar_libreta_excel(campesinos), len(campesinos)
+        
+        def on_exito(resultado):
+            ruta, total = resultado
+            hojas = -(-total // 10)
+            
+            # Abrir automáticamente
+            try:
+                if os.name == 'nt':  # Windows
+                    os.startfile(ruta)
+                elif sys.platform == 'darwin':  # macOS
+                    subprocess.call(['open', ruta])
+                else:  # Linux
+                    subprocess.call(['xdg-open', ruta])
+            except Exception:
+                pass
+            
+            messagebox.showinfo("Éxito",
+                f"Libreta generada correctamente\n\n"
+                f"Usuarios: {total}\n"
+                f"Hojas: {hojas}\n"
+                f"Archivo: {os.path.basename(ruta)}\n\n"
+                f"Imprime en oficio, horizontal, a doble cara.")
+        
+        def on_error(error):
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Error", f"Error al generar la libreta:\n{str(error)}")
         
         from modules.utils import ejecutar_en_hilo
         ejecutar_en_hilo(self.ventana, operacion_pesada, on_exito, on_error)
@@ -3159,7 +3204,9 @@ class VentanaEditarLote:
         
         self.ventana = tk.Toplevel(parent)
         self.ventana.title(f"✏️ Editar Lote {campesino['numero_lote']}")
-        self.ventana.geometry("520x550")
+        # Alto suficiente para que las cinco opciones (incluida Eliminar Lote)
+        # queden a la vista sin tener que desplazar la ventana.
+        self.ventana.geometry("520x720")
         self.ventana.transient(parent)
         self.ventana.grab_set()
         
