@@ -1152,6 +1152,75 @@ def renombrar_campesino(campesino_id: int, nuevo_nombre: str) -> bool:
         
     return True
 
+def cambiar_numero_lote(campesino_id: int, nuevo_lote: str) -> bool:
+    """
+    Cambia el número de lote de un campesino.
+
+    Sólo toca la fila indicada: no renumera a nadie más, no mueve superficies y
+    no altera siembras, recibos ni cuotas (que van ligados por campesino_id, no
+    por el número de lote). Lo único que impide el cambio es que otro lote ya
+    tenga ese número, porque la columna es UNIQUE.
+
+    Args:
+        campesino_id: ID del campesino
+        nuevo_lote: Nuevo número de lote
+
+    Returns:
+        True si se actualizó correctamente
+    """
+    nuevo_lote = str(nuevo_lote or '').strip()
+    if not nuevo_lote:
+        raise ValueError("El número de lote no puede estar vacío")
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("SELECT nombre, numero_lote FROM campesinos WHERE id = ?", (campesino_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise ValueError("Campesino no encontrado")
+
+        nombre = row[0]
+        lote_anterior = row[1]
+
+        if nuevo_lote == lote_anterior:
+            return False
+
+        # El número no puede estar ocupado por otro lote (constraint UNIQUE).
+        cursor.execute(
+            "SELECT nombre, activo FROM campesinos WHERE numero_lote = ? AND id != ?",
+            (nuevo_lote, campesino_id))
+        ocupado = cursor.fetchone()
+        if ocupado:
+            estado = "" if ocupado[1] else " (dado de baja)"
+            raise ValueError(
+                f"El lote {nuevo_lote} ya existe{estado}, pertenece a {ocupado[0]}.\n"
+                f"Elige otro número o edita primero ese lote.")
+
+        cursor.execute("UPDATE campesinos SET numero_lote = ? WHERE id = ?",
+                       (nuevo_lote, campesino_id))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
+
+    registrar_auditoria(
+        'CAMBIO_NUMERO_LOTE',
+        f"{nombre}: lote '{lote_anterior}' → '{nuevo_lote}'",
+        json.dumps({'campesino_id': campesino_id, 'lote_anterior': lote_anterior})
+    )
+
+    # Sincronizar con cuotas.db para que el historial muestre el número nuevo
+    try:
+        actualizar_datos_campesino_en_cuotas(campesino_id, {'numero_lote': nuevo_lote})
+    except Exception as e:
+        print(f"Advertencia: No se pudo sincronizar con cuotas.db: {e}")
+
+    return True
+
 def actualizar_superficie_campesino(campesino_id: int, nueva_superficie: float) -> bool:
     """
     Actualiza la superficie de un campesino.

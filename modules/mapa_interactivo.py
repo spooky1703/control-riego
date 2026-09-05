@@ -72,6 +72,13 @@ def convertir_lote_id(raw_id: str) -> str:
     return raw_id
 
 
+def _orden_lote(lote):
+    """Numero inicial de un lote, para ordenar '9' antes que '10'."""
+    import re
+    m = re.match(r'\s*(\d+)', str(lote or ''))
+    return int(m.group(1)) if m else 10 ** 9
+
+
 # ── Tema claro ──
 THEME = {
     'bg':        '#f0f2f5',
@@ -111,6 +118,11 @@ COLORES_CULTIVO = {
     '_SIN_SIEMBRA':   '#E2E8F0',
     '_DESCONOCIDO':   '#EDF2F7',
 }
+
+# Naranja fuerte para que las parcelas sin siembra canten cuando se filtran:
+# el gris '_SIN_SIEMBRA' se pierde contra el fondo del mapa.
+COLOR_RESALTE = '#FF6B00'
+COLOR_RESALTE_BORDE = '#7B341E'
 
 # ── Paleta por barrio ──
 COLORES_BARRIO = {
@@ -193,6 +205,66 @@ def cargar_datos_bd():
         conn.close()
 
 
+# ═══════════════════════════════════════════════════════════
+# ASIGNACIONES MANUALES parcela → lote
+# ═══════════════════════════════════════════════════════════
+# El DXF trae un polígono por parcela física, pero en la BD hay lotes que se
+# dieron de alta juntos porque el dueño es el mismo ('13,14,15', '45,46,47').
+# Al corregir ese lote a '13' se llena el polígono 13, pero el 14 y el 15
+# quedan huérfanos. Esta tabla permite decir a mano "el polígono 14 en realidad
+# es del lote 13", sin tocar el padrón ni la geometría.
+
+def _asegurar_tabla_alias(conn):
+    """Crea la tabla de asignaciones si aún no existe. No migra nada."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS mapa_lotes_alias (
+            lote_mapa TEXT PRIMARY KEY,
+            numero_lote TEXT NOT NULL,
+            fecha TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+
+def cargar_alias_mapa():
+    """Devuelve {lote del mapa: número de lote real de la BD}."""
+    if not os.path.exists(DB_PATH):
+        return {}
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        _asegurar_tabla_alias(conn)
+        return {str(r[0]): str(r[1])
+                for r in conn.execute("SELECT lote_mapa, numero_lote FROM mapa_lotes_alias")}
+    except Exception as e:
+        print(f"Advertencia: no se pudieron leer las asignaciones del mapa: {e}")
+        return {}
+    finally:
+        conn.close()
+
+
+def guardar_alias_mapa(lote_mapa: str, numero_lote):
+    """
+    Asigna un polígono del mapa a un lote de la BD. Si numero_lote es None o
+    vacío, se quita la asignación y el polígono vuelve a quedar suelto.
+    """
+    lote_mapa = str(lote_mapa or '').strip()
+    if not lote_mapa:
+        raise ValueError("Falta el lote del mapa")
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        _asegurar_tabla_alias(conn)
+        numero_lote = str(numero_lote or '').strip()
+        if numero_lote:
+            conn.execute(
+                "INSERT OR REPLACE INTO mapa_lotes_alias (lote_mapa, numero_lote) VALUES (?, ?)",
+                (lote_mapa, numero_lote))
+        else:
+            conn.execute("DELETE FROM mapa_lotes_alias WHERE lote_mapa = ?", (lote_mapa,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _obtener_nombre_asociacion():
     """Lee nombre y ubicacion de la configuracion de la BD."""
     nombre = 'ASOCIACION DE CAMPESINOS DE BOMBEO Y REBOMBEO DEL CERRO DEL XICUCO'
@@ -233,7 +305,12 @@ class MapaCultivosApp:
         self.datos_bd = {}
         self.mode = tk.StringVar(value='cultivo')
         self.filtro = tk.StringVar(value='Todos')
-        self._patches = {}        # lote_id -> (patch, path_obj)
+        self.alias_mapa = {}      # lote del mapa -> numero_lote real en la BD
+        # Una entrada por polígono: hay lote_id repetidos en el DXF y si se
+        # usaran como clave se perderían parcelas (y no se podrían asignar).
+        self._patches = {}        # clave unica -> (patch, path_obj, lote_mapa)
+        self._indice_lote = {}    # lote del mapa -> clave (la primera que aparezca)
+        self._resaltados = set()  # claves pintadas por el filtro "Sin siembra"
         self._selected_id = None
         self._hover_id = None
         self._pan_data = None     # Para pan con click + drag
@@ -432,6 +509,12 @@ class MapaCultivosApp:
         self.info_text.tag_configure('active', foreground=THEME['green'])
         self.info_text.tag_configure('inactive', foreground=THEME['subtext'])
 
+        # Asignacion manual de la parcela seleccionada a un lote de la BD
+        self.btn_asignar = ttk.Button(self.panel, text='🔗 Asignar lote…',
+                                      state='disabled',
+                                      command=self._abrir_asignar_lote)
+        self.btn_asignar.pack(fill='x', padx=10, pady=(0, 8))
+
         # ── Leyenda ──
         tk.Label(self.panel, text='Leyenda',
                  font=('Helvetica', 11, 'bold'),
@@ -539,9 +622,9 @@ class MapaCultivosApp:
                 # Fue un click sin arrastrar -> seleccionar parcela
                 if event.inaxes == self.ax and event.xdata is not None:
                     point = (event.xdata, event.ydata)
-                    for lote_id, (patch, path_obj) in self._patches.items():
+                    for clave, (patch, path_obj, lote_mapa) in self._patches.items():
                         if path_obj.contains_point(point):
-                            self._mostrar_detalle(lote_id)
+                            self._mostrar_detalle(lote_mapa)
                             break
             self._pan_data = None
 
@@ -563,33 +646,33 @@ class MapaCultivosApp:
         # Hover (solo si no estamos arrastrando)
         if event.inaxes != self.ax or event.xdata is None:
             if self._hover_id and self._hover_id in self._patches:
-                self._patches[self._hover_id][0].set_edgecolor(THEME['map_edge'])
-                self._patches[self._hover_id][0].set_linewidth(0.25)
+                self._restaurar_borde(self._hover_id)
                 self._hover_id = None
                 self.canvas.draw_idle()
             return
 
         if self._hover_id and self._hover_id in self._patches:
-            self._patches[self._hover_id][0].set_edgecolor(THEME['map_edge'])
-            self._patches[self._hover_id][0].set_linewidth(0.25)
+            self._restaurar_borde(self._hover_id)
             self._hover_id = None
             self.tooltip.set_visible(False)
 
         point = (event.xdata, event.ydata)
-        for lote_id, (patch, path_obj) in self._patches.items():
+        for clave, (patch, path_obj, lote_mapa) in self._patches.items():
             if path_obj.contains_point(point):
                 patch.set_edgecolor(THEME['accent'])
                 patch.set_linewidth(1.8)
-                self._hover_id = lote_id
+                self._hover_id = clave
                 
                 # Update text and position for tooltip
-                datos = self.datos_bd.get(lote_id, {})
+                datos = self._datos_de(lote_mapa)
                 campesino = datos.get('nombre', 'N/D')
                 barrio = datos.get('barrio', 'N/D')
                 cultivo = datos.get('cultivo', 'Sin siembra')
                 if not cultivo: cultivo = 'Sin siembra'
                 
-                tt_text = f"Lote: {lote_id}\n{campesino}\n{cultivo} - {barrio}"
+                real = self._lote_real(lote_mapa)
+                etiqueta = f"Lote: {lote_mapa}" if real == lote_mapa else f"Lote: {lote_mapa} → {real}"
+                tt_text = f"{etiqueta}\n{campesino}\n{cultivo} - {barrio}"
                 self.tooltip.set_text(tt_text)
                 self.tooltip.xy = (event.xdata, event.ydata)
                 self.tooltip.set_visible(True)
@@ -613,16 +696,32 @@ class MapaCultivosApp:
             return
 
         self.datos_bd = cargar_datos_bd()
+        self.alias_mapa = cargar_alias_mapa()
         self._actualizar_filtros(reset=True)
         self._actualizar_stats()
         self._redibujar()
 
-        matched = sum(1 for p in self.parcelas_geo
-                      if p.get('lote_id') and convertir_lote_id(str(p['lote_id'])) in self.datos_bd)
+        matched = 0
+        for p in self.parcelas_geo:
+            if not p.get('lote_id'):
+                continue
+            if self._lote_real(convertir_lote_id(str(p['lote_id']))) in self.datos_bd:
+                matched += 1
+        sueltas = len(self.parcelas_geo) - matched
         self.label_status.config(
             text=f'{len(self.parcelas_geo)} parcelas  |  '
                  f'{len(self.datos_bd)} campesinos  |  '
-                 f'{matched} vinculados')
+                 f'{matched} vinculados  |  {sueltas} sin vincular')
+
+    def _lote_real(self, lote_mapa):
+        """Número de lote de la BD al que corresponde un polígono del mapa."""
+        if not lote_mapa:
+            return None
+        return self.alias_mapa.get(lote_mapa, lote_mapa)
+
+    def _datos_de(self, lote_mapa):
+        """Datos de la BD de un polígono, respetando su asignación manual."""
+        return self.datos_bd.get(self._lote_real(lote_mapa), {})
 
     def _buscar_lote(self):
         """Busca un lote por ID, centra la vista ahi con zoom y muestra detalle."""
@@ -631,12 +730,13 @@ class MapaCultivosApp:
             return
         lote_id = convertir_lote_id(val)
         
-        if lote_id not in self._patches:
+        clave = self._indice_lote.get(lote_id)
+        if clave is None:
             messagebox.showinfo('No encontrado', f'Lote {lote_id} no se encontro en el mapa.', parent=self.root)
             return
             
         # Encontrar bounding box y centrar
-        patch, path_obj = self._patches[lote_id]
+        patch, path_obj, _ = self._patches[clave]
         verts = path_obj.vertices
         if len(verts) > 0:
             xs = [v[0] for v in verts]
@@ -654,12 +754,11 @@ class MapaCultivosApp:
             # Mostrar detalles y marcar hover
             self._mostrar_detalle(lote_id)
             if self._hover_id and self._hover_id in self._patches:
-                self._patches[self._hover_id][0].set_edgecolor(THEME['map_edge'])
-                self._patches[self._hover_id][0].set_linewidth(0.25)
+                self._restaurar_borde(self._hover_id)
                 
             patch.set_edgecolor('#e53e3e') # Rojo fuerte temporal
             patch.set_linewidth(2.5)
-            self._hover_id = lote_id
+            self._hover_id = clave
             
             # Actualizar el slider de zoom basado en el factor calculado
             if hasattr(self, '_base_xlim'):
@@ -729,22 +828,28 @@ class MapaCultivosApp:
         return c_ok and b_ok
 
     def _get_color(self, lote_id):
-        datos = self.datos_bd.get(lote_id, {})
+        """Devuelve (color, alpha, resaltado) para un poligono del mapa."""
+        datos = self._datos_de(lote_id)
         mode = self.mode.get()
         
         pasa_filtro = self._cumple_filtros(datos)
         alpha = 0.85 if pasa_filtro else 0.08
+
+        # Al filtrar por "Sin siembra" las parcelas que quedan se pintan de
+        # naranja fuerte: en su gris de siempre casi no se distinguen del fondo.
+        if pasa_filtro and self.filtro_cultivo.get() == 'Sin siembra':
+            return COLOR_RESALTE, 1.0, True
         
         if mode == 'cultivo':
-            return _color_cultivo(datos.get('cultivo')), alpha
+            return _color_cultivo(datos.get('cultivo')), alpha, False
 
         elif mode == 'barrio':
             barrio = datos.get('barrio', '')
-            return COLORES_BARRIO.get(barrio, '#A0AEC0'), alpha
+            return COLORES_BARRIO.get(barrio, '#A0AEC0'), alpha, False
 
         elif mode == 'seccion':
             seccion = datos.get('seccion', '')
-            return COLORES_SECCION.get(seccion, '#A0AEC0'), alpha
+            return COLORES_SECCION.get(seccion, '#A0AEC0'), alpha, False
 
         elif mode == 'riegos':
             import matplotlib.colors as mcolors
@@ -760,11 +865,24 @@ class MapaCultivosApp:
             if not datos.get('siembra_activa', False):
                 color = COLORES_CULTIVO['_SIN_SIEMBRA']
                 
-            return color, alpha
+            return color, alpha, False
 
         else: # estado
             activa = datos.get('siembra_activa', False)
-            return THEME['green'] if activa else COLORES_CULTIVO['_SIN_SIEMBRA'], alpha
+            return (THEME['green'] if activa else COLORES_CULTIVO['_SIN_SIEMBRA']), alpha, False
+
+    def _restaurar_borde(self, clave):
+        """Devuelve un poligono a su borde de reposo tras el hover."""
+        entrada = self._patches.get(clave)
+        if not entrada:
+            return
+        patch = entrada[0]
+        if clave in self._resaltados:
+            patch.set_edgecolor(COLOR_RESALTE_BORDE)
+            patch.set_linewidth(0.9)
+        else:
+            patch.set_edgecolor(THEME['map_edge'])
+            patch.set_linewidth(0.25)
 
     def _redibujar(self):
         self.ax.clear()
@@ -779,34 +897,46 @@ class MapaCultivosApp:
         self.ax.axis('off')
 
         self._patches = {}
+        self._indice_lote = {}
+        self._resaltados = set()
 
-        for parcela in self.parcelas_geo:
+        for i, parcela in enumerate(self.parcelas_geo):
             lote_id_raw = parcela.get('lote_id')
             lote_id = convertir_lote_id(str(lote_id_raw)) if lote_id_raw else None
             coords = parcela.get('coords', [])
             if not coords or len(coords) < 3:
                 continue
 
-            color, alpha = self._get_color(lote_id)
+            color, alpha, resaltado = self._get_color(lote_id)
 
             poly = MplPolygon(
                 coords, closed=True,
                 facecolor=color,
-                edgecolor=THEME['map_edge'],
-                linewidth=0.25,
+                edgecolor=COLOR_RESALTE_BORDE if resaltado else THEME['map_edge'],
+                linewidth=0.9 if resaltado else 0.25,
                 alpha=alpha,
+                zorder=3 if resaltado else 1,
                 antialiased=True)
             self.ax.add_patch(poly)
 
             if lote_id:
+                # Clave propia por poligono: en el DXF hay lote_id repetidos y
+                # si se usaran como clave se perderian parcelas del mapa.
+                clave = f'p{i}'
                 path_obj = Path(coords + [coords[0]])
-                self._patches[lote_id] = (poly, path_obj)
+                self._patches[clave] = (poly, path_obj, lote_id)
+                self._indice_lote.setdefault(lote_id, clave)
+                if resaltado:
+                    self._resaltados.add(clave)
 
                 cx, cy = parcela['centroid']
                 self.ax.text(cx, cy, str(lote_id),
                              ha='center', va='center',
-                             fontsize=3, color='#4A5568',
-                             fontweight='bold', alpha=0.6,
+                             fontsize=3.6 if resaltado else 3,
+                             color='#2D1B0E' if resaltado else '#4A5568',
+                             fontweight='bold',
+                             alpha=1.0 if resaltado else 0.6,
+                             zorder=4 if resaltado else 2,
                              clip_on=True)
 
         # --- Lógica de Aislamiento/Auto-Zoom por Sección ---
@@ -817,7 +947,7 @@ class MapaCultivosApp:
             for p in self.parcelas_geo:
                 lid_raw = p.get('lote_id')
                 lid = convertir_lote_id(str(lid_raw)) if lid_raw else None
-                if self.datos_bd.get(lid, {}).get('barrio') == fb:
+                if self._datos_de(lid).get('barrio') == fb:
                     coords_aisladas.extend(p.get('coords', []))
             
             if coords_aisladas:
@@ -931,13 +1061,17 @@ class MapaCultivosApp:
 
     # ──────── Detalle ────────
     def _mostrar_detalle(self, lote_id):
-        datos = self.datos_bd.get(lote_id, {})
+        datos = self._datos_de(lote_id)
+        real = self._lote_real(lote_id)
 
         self.info_text.config(state='normal')
         self.info_text.delete('1.0', 'end')
 
         self.info_text.insert('end', f'LOTE {lote_id}\n', 'title')
         self.info_text.insert('end', '-' * 28 + '\n', 'sep')
+
+        if real != lote_id:
+            self.info_text.insert('end', f'  Asignado al lote {real}\n\n', 'active')
 
         if datos:
             fields = [
@@ -964,10 +1098,51 @@ class MapaCultivosApp:
         else:
             self.info_text.insert('end', '\n  Sin datos en BD\n', 'inactive')
             self.info_text.insert('end', f'  ID DXF: {lote_id}\n', 'label')
+            self.info_text.insert('end', '\n  Usa "Asignar lote" si esta\n'
+                                         '  parcela pertenece a otro lote.\n', 'label')
 
         self.info_text.insert('end', '\n' + '-' * 28, 'sep')
         self.info_text.config(state='disabled')
         self._selected_id = lote_id
+
+        # Habilitar el boton de asignacion para la parcela seleccionada
+        if hasattr(self, 'btn_asignar'):
+            texto = 'Cambiar lote asignado' if real != lote_id else 'Asignar lote…'
+            self.btn_asignar.config(state='normal', text=f'🔗 {texto}')
+
+    # ──────── Asignacion manual parcela → lote ────────
+    def _abrir_asignar_lote(self):
+        """
+        Permite decir a mano a que lote de la BD pertenece la parcela
+        seleccionada. Es para los poligonos que quedan sueltos porque su lote se
+        dio de alta agrupado ('13,14,15'): al corregirlo a '13' se llena el 13,
+        y con esto se apuntan tambien el 14 y el 15 al mismo dueno.
+        """
+        lote_mapa = self._selected_id
+        if not lote_mapa:
+            messagebox.showinfo('Sin seleccion',
+                                'Haz clic en una parcela del mapa primero.',
+                                parent=self.root)
+            return
+        VentanaAsignarLote(self.root, lote_mapa, self)
+
+    def _aplicar_asignacion(self, lote_mapa, numero_lote):
+        """Guarda la asignacion y refresca el mapa."""
+        guardar_alias_mapa(lote_mapa, numero_lote)
+        self.alias_mapa = cargar_alias_mapa()
+        self._redibujar()
+        self._mostrar_detalle(lote_mapa)
+        matched = 0
+        for p in self.parcelas_geo:
+            if not p.get('lote_id'):
+                continue
+            if self._lote_real(convertir_lote_id(str(p['lote_id']))) in self.datos_bd:
+                matched += 1
+        self.label_status.config(
+            text=f'{len(self.parcelas_geo)} parcelas  |  '
+                 f'{len(self.datos_bd)} campesinos  |  '
+                 f'{matched} vinculados  |  '
+                 f'{len(self.parcelas_geo) - matched} sin vincular')
 
     # ═══════════════════════════════════════════════════════
     # EXPORTAR PDF
@@ -1082,12 +1257,13 @@ class MapaCultivosApp:
         ax.axis('off')
 
         for parcela in self.parcelas_geo:
-            lote_id = parcela.get('lote_id')
+            lote_id_raw = parcela.get('lote_id')
+            lote_id = convertir_lote_id(str(lote_id_raw)) if lote_id_raw else None
             coords = parcela.get('coords', [])
             if not coords or len(coords) < 3:
                 continue
 
-            datos = self.datos_bd.get(lote_id, {})
+            datos = self._datos_de(lote_id)
             cultivo_norm = _normalizar_cultivo(datos.get('cultivo'))
             color = _color_cultivo(datos.get('cultivo'))
 
@@ -1274,3 +1450,135 @@ class MapaCultivosApp:
         plt.close(fig)
         buf.seek(0)
         return buf
+
+
+# ═══════════════════════════════════════════════════════════
+# VENTANA: ASIGNAR UNA PARCELA DEL MAPA A UN LOTE DE LA BD
+# ═══════════════════════════════════════════════════════════
+
+class VentanaAsignarLote:
+    """
+    Elige a qué lote de la BD pertenece realmente una parcela del mapa.
+
+    No toca el padrón ni la geometría: sólo guarda la equivalencia en la tabla
+    mapa_lotes_alias, de modo que el mapa pinte esa parcela con los datos del
+    lote elegido.
+    """
+
+    def __init__(self, parent, lote_mapa, app):
+        self.lote_mapa = str(lote_mapa)
+        self.app = app
+        self.asignado = app.alias_mapa.get(self.lote_mapa)
+
+        # Lista de candidatos: todos los lotes activos del padrón
+        self.candidatos = sorted(
+            ((lote, datos.get('nombre', ''), datos.get('barrio', ''))
+             for lote, datos in app.datos_bd.items()),
+            key=lambda t: (_orden_lote(t[0]), t[0]))
+        self.visibles = list(self.candidatos)
+
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title(f'🔗 Asignar lote - parcela {self.lote_mapa}')
+        self.ventana.geometry('460x520')
+        self.ventana.transient(parent)
+        self.ventana.grab_set()
+        self.ventana.configure(bg=THEME['surface'])
+
+        self._build()
+
+    def _build(self):
+        frame = tk.Frame(self.ventana, bg=THEME['surface'], padx=16, pady=14)
+        frame.pack(fill='both', expand=True)
+
+        tk.Label(frame, text=f'Parcela {self.lote_mapa} del mapa',
+                 font=('Helvetica', 13, 'bold'),
+                 bg=THEME['surface'], fg=THEME['text']).pack(anchor='w')
+
+        actual = self.asignado or '(sin asignar)'
+        self.label_actual = tk.Label(
+            frame, text=f'Asignada actualmente a: {actual}',
+            font=('Helvetica', 10), bg=THEME['surface'], fg=THEME['subtext'])
+        self.label_actual.pack(anchor='w', pady=(2, 10))
+
+        tk.Label(frame, text='Buscar por número de lote o nombre:',
+                 font=('Helvetica', 10),
+                 bg=THEME['surface'], fg=THEME['text']).pack(anchor='w')
+
+        self.var_busqueda = tk.StringVar()
+        entry = ttk.Entry(frame, textvariable=self.var_busqueda, width=44,
+                          font=('Helvetica', 11))
+        entry.pack(fill='x', pady=(4, 8))
+        entry.focus()
+        self.var_busqueda.trace_add('write', lambda *_: self._filtrar())
+
+        cont = tk.Frame(frame, bg=THEME['surface'])
+        cont.pack(fill='both', expand=True)
+        scroll = ttk.Scrollbar(cont, orient='vertical')
+        self.lista = tk.Listbox(cont, font=('Menlo', 10), activestyle='none',
+                                yscrollcommand=scroll.set,
+                                bg=THEME['card'], fg=THEME['text'],
+                                selectbackground=THEME['accent'],
+                                highlightthickness=1,
+                                highlightbackground=THEME['border'])
+        scroll.config(command=self.lista.yview)
+        scroll.pack(side='right', fill='y')
+        self.lista.pack(side='left', fill='both', expand=True)
+        self.lista.bind('<Double-Button-1>', lambda e: self._guardar())
+
+        self._filtrar()
+
+        botones = tk.Frame(frame, bg=THEME['surface'])
+        botones.pack(fill='x', pady=(12, 0))
+        ttk.Button(botones, text='✅ Asignar',
+                   command=self._guardar).pack(side='left', padx=(0, 6))
+        if self.asignado:
+            ttk.Button(botones, text='🚫 Quitar asignación',
+                       command=self._quitar).pack(side='left', padx=6)
+        ttk.Button(botones, text='❌ Cancelar',
+                   command=self.ventana.destroy).pack(side='right')
+
+    def _filtrar(self):
+        texto = self.var_busqueda.get().strip().upper()
+        self.visibles = [c for c in self.candidatos
+                         if not texto or texto in c[0].upper() or texto in c[1].upper()]
+        self.lista.delete(0, 'end')
+        for lote, nombre, barrio in self.visibles[:400]:
+            self.lista.insert('end', f'{lote:<10} {nombre[:28]:<28} {barrio}')
+        if len(self.visibles) > 400:
+            self.lista.insert('end', f'… y {len(self.visibles) - 400} más (afina la búsqueda)')
+
+    def _seleccion(self):
+        sel = self.lista.curselection()
+        if not sel or sel[0] >= len(self.visibles):
+            return None
+        return self.visibles[sel[0]][0]
+
+    def _guardar(self):
+        lote = self._seleccion()
+        if not lote:
+            messagebox.showinfo('Sin selección',
+                                'Elige un lote de la lista.', parent=self.ventana)
+            return
+        try:
+            self.app._aplicar_asignacion(self.lote_mapa, lote)
+            messagebox.showinfo(
+                'Asignado',
+                f'La parcela {self.lote_mapa} del mapa ahora muestra los datos '
+                f'del lote {lote}.', parent=self.ventana)
+            self.ventana.destroy()
+        except Exception as e:
+            messagebox.showerror('Error', f'No se pudo asignar:\n{e}',
+                                 parent=self.ventana)
+
+    def _quitar(self):
+        if not messagebox.askyesno(
+                'Quitar asignación',
+                f'¿Dejar la parcela {self.lote_mapa} sin asignar?',
+                parent=self.ventana):
+            return
+        try:
+            self.app._aplicar_asignacion(self.lote_mapa, None)
+            self.ventana.destroy()
+        except Exception as e:
+            messagebox.showerror('Error', f'No se pudo quitar:\n{e}',
+                                 parent=self.ventana)

@@ -2848,6 +2848,103 @@ class VentanaRenombrarCampesino:
             except Exception as e:
                 messagebox.showerror("Error", f"Error al renombrar:\n{str(e)}")
 
+class VentanaEditarNumeroLote:
+    """
+    Ventana para corregir el número de lote de un campesino.
+
+    Existe para casos como '13,14,15', lotes que en su día se dieron de alta
+    juntos porque el dueño era el mismo. Cambiar el número no mueve nada más:
+    ni renumera a los siguientes, ni toca superficies, ni afecta siembras,
+    recibos o cuotas (van ligados por el id del campesino, no por el lote).
+    """
+    
+    def __init__(self, parent, campesino_id, campesino_nombre, lote, ventana_principal):
+        self.campesino_id = campesino_id
+        self.nombre = campesino_nombre
+        self.lote_actual = str(lote)
+        self.ventana_principal = ventana_principal
+        
+        self.ventana = tk.Toplevel(parent)
+        self.ventana.title(f"🔢 Editar Número de Lote - {lote}")
+        self.ventana.geometry("470x300")
+        self.ventana.transient(parent)
+        self.ventana.grab_set()
+        
+        self.crear_widgets()
+    
+    def crear_widgets(self):
+        frame = ttk.Frame(self.ventana, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(frame, text="🔢 EDITAR NÚMERO DE LOTE",
+                 font=('Helvetica', 12, 'bold')).pack(pady=(0, 12))
+        
+        ttk.Label(frame, text=f"Dueño: {self.nombre}",
+                 font=('Helvetica', 10)).pack(anchor=tk.W, pady=2)
+        ttk.Label(frame, text=f"Número actual: {self.lote_actual}",
+                 font=('Helvetica', 10, 'bold')).pack(anchor=tk.W, pady=2)
+        
+        ttk.Label(frame, text="Nuevo número de lote:",
+                 font=('Helvetica', 10)).pack(anchor=tk.W, pady=(15, 5))
+        
+        self.entry_lote = ttk.Entry(frame, width=30, font=('Helvetica', 12))
+        self.entry_lote.pack(anchor=tk.W)
+        self.entry_lote.insert(0, self.lote_actual)
+        self.entry_lote.select_range(0, tk.END)
+        self.entry_lote.focus()
+        self.entry_lote.bind('<Return>', lambda e: self.guardar())
+        
+        ttk.Label(frame,
+                 text="Sólo cambia este lote. No renumera a los demás\n"
+                      "ni modifica superficies, siembras ni recibos.",
+                 font=('Helvetica', 9), foreground='gray',
+                 justify=tk.LEFT).pack(anchor=tk.W, pady=(10, 0))
+        
+        frame_botones = ttk.Frame(frame)
+        frame_botones.pack(pady=20)
+        
+        ttk.Button(frame_botones, text="✅ Guardar",
+                  command=self.guardar).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botones, text="❌ Cancelar",
+                  command=self.ventana.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def guardar(self):
+        nuevo_lote = self.entry_lote.get().strip()
+        
+        if not nuevo_lote:
+            messagebox.showwarning("Advertencia", "Debe ingresar un número de lote",
+                                   parent=self.ventana)
+            return
+        
+        if nuevo_lote == self.lote_actual:
+            messagebox.showinfo("Sin cambios", "El número de lote no ha cambiado",
+                                parent=self.ventana)
+            return
+        
+        if not messagebox.askyesno("Confirmar",
+                                   f"¿Cambiar el número de lote de:\n'{self.lote_actual}'\n"
+                                   f"a:\n'{nuevo_lote}'?\n\n"
+                                   f"Dueño: {self.nombre}",
+                                   parent=self.ventana):
+            return
+        
+        try:
+            from modules.models import cambiar_numero_lote
+            cambiar_numero_lote(self.campesino_id, nuevo_lote)
+            
+            messagebox.showinfo("Éxito",
+                                f"Lote actualizado: {self.lote_actual} → {nuevo_lote}",
+                                parent=self.ventana)
+            self.ventana_principal.cargar_todos_campesinos()
+            self.ventana.destroy()
+            
+        except ValueError as e:
+            messagebox.showerror("No se puede cambiar", str(e), parent=self.ventana)
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al cambiar el número de lote:\n{str(e)}",
+                                 parent=self.ventana)
+
+
 class VentanaPartirLote:
     """Ventana para partir/subdividir un lote en múltiples sublotes"""
     
@@ -3204,9 +3301,9 @@ class VentanaEditarLote:
         
         self.ventana = tk.Toplevel(parent)
         self.ventana.title(f"✏️ Editar Lote {campesino['numero_lote']}")
-        # Alto suficiente para que las cinco opciones (incluida Eliminar Lote)
+        # Alto suficiente para que las seis opciones (incluida Eliminar Lote)
         # queden a la vista sin tener que desplazar la ventana.
-        self.ventana.geometry("520x720")
+        self.ventana.geometry("520x800")
         self.ventana.transient(parent)
         self.ventana.grab_set()
         
@@ -3246,6 +3343,17 @@ class VentanaEditarLote:
                                    command=self.renombrar)
         btn_renombrar.pack(fill=tk.X, pady=5)
         ttk.Label(opciones_frame, text="Cambiar el nombre del dueño del lote",
+                 font=('Helvetica', 9), foreground='gray').pack(anchor=tk.W, padx=20)
+        
+        # Separador
+        ttk.Separator(opciones_frame, orient='horizontal').pack(fill=tk.X, pady=10)
+        
+        # Botón editar número de lote
+        btn_numero = ttk.Button(opciones_frame,
+                                text="🔢 Editar Número de Lote",
+                                command=self.editar_numero_lote)
+        btn_numero.pack(fill=tk.X, pady=5)
+        ttk.Label(opciones_frame, text="Corregir el número del lote (ej. '13,14,15' → '13')",
                  font=('Helvetica', 9), foreground='gray').pack(anchor=tk.W, padx=20)
         
         # Separador
@@ -3295,6 +3403,16 @@ class VentanaEditarLote:
         # Botón cerrar
         ttk.Button(frame, text="❌ Cerrar",
                   command=self.ventana.destroy).pack(pady=10)
+    
+    def editar_numero_lote(self):
+        """Abre ventana para corregir el número de lote"""
+        self.ventana.destroy()
+        VentanaEditarNumeroLote(
+            self.ventana.master,
+            self.campesino['id'],
+            self.campesino['nombre'],
+            self.campesino['numero_lote'],
+            self.ventana_principal)
     
     def renombrar(self):
         """Abre ventana para renombrar"""
